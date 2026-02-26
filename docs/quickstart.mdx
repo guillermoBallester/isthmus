@@ -6,20 +6,25 @@ description: "Get Isthmus running with Claude Desktop in under 5 minutes."
 <Steps>
   <Step title="Prerequisites">
     You need:
-    - **Go 1.25+** — [install Go](https://go.dev/doc/install)
     - **A PostgreSQL database** — any version 12+, accessible from your machine
   </Step>
 
   <Step title="Install Isthmus">
     ```bash
-    go install github.com/guillermoBallester/isthmus/cmd/isthmus@latest
+    curl -fsSL https://isthmus.dev/install.sh | sh
     ```
+
+    The script downloads a prebuilt binary for your platform. If no release is available, it falls back to `go install` (requires [Go 1.25+](https://go.dev/doc/install)).
 
     Verify the binary is in your PATH:
 
     ```bash
     isthmus --version
     ```
+
+    <Info>
+      See [Installation](/installation) for all methods including manual download, `go install`, clone & build, and Docker.
+    </Info>
   </Step>
 
   <Step title="Configure your MCP client">

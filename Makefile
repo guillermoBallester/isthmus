@@ -1,7 +1,9 @@
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 .PHONY: build run dry-run test test-short lint fmt vet tidy clean
 
 build:
-	go build -o bin/isthmus ./cmd/isthmus
+	go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/isthmus ./cmd/isthmus
 
 run: build
 	@set -a && source .env && set +a && ./bin/isthmus
