@@ -9,7 +9,7 @@
 ```
 
 [![CI](https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml/badge.svg)](https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-blueviolet)](https://modelcontextprotocol.io)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -47,12 +47,16 @@ Isthmus connects to your database and serves MCP tools over stdio. The LLM can e
 
 ## Quick Start
 
-### 1. Build
+### 1. Install
+
+```bash
+curl -fsSL https://isthmus.dev/install.sh | sh
+```
+
+Or with Go 1.25+:
 
 ```bash
 go install github.com/guillermoBallester/isthmus/cmd/isthmus@latest
-# or
-make build    # -> bin/isthmus
 ```
 
 ### 2. Configure Claude Desktop
@@ -180,7 +184,7 @@ isthmus/
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - Docker (for integration tests)
 
 ### Commands
@@ -207,7 +211,6 @@ go test -race -count=1 ./...          # All tests (needs Docker)
 
 ## Coming Soon
 
-- **Schema profiler** — auto-discover column statistics, enum values, relationships
 - **Column masking** — hide sensitive columns (emails, SSNs) in query results
 - **Cloud dashboard** — optional team features: schema browser, change tracking, shared annotations
 - **MySQL adapter** — second database backend

@@ -75,10 +75,13 @@ Claude should call `list_schemas` and `list_tables` and return a summary of your
     which isthmus
     ```
 
-    If it's in `~/go/bin`, you can use the full path in the config:
+    If it's not in your PATH, use the full path in the config. The location depends on how you installed:
+
+    - **Install script / prebuilt binary:** `/usr/local/bin/isthmus`
+    - **go install:** `~/go/bin/isthmus`
 
     ```json
-    "command": "/Users/yourname/go/bin/isthmus"
+    "command": "/usr/local/bin/isthmus"
     ```
   </Accordion>
   <Accordion title="Wrong config file path">

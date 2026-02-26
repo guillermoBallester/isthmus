@@ -6,9 +6,9 @@
 #
 # What it does:
 #   1. Detects OS and architecture
-#   2. Installs via `go install` if Go >= 1.25 is available
-#   3. Verifies the binary
-#   4. Falls back to clone+build instructions if Go is missing
+#   2. Downloads prebuilt binary from GitHub Releases (if available)
+#   3. Falls back to `go install` if Go >= 1.25 is available
+#   4. Falls back to clone+build instructions otherwise
 
 set -e
 
@@ -66,24 +66,28 @@ main() {
     exit 1
   fi
 
-  # --- Phase 2 (future): Download prebuilt binary from GitHub Releases ---
-  # When releases are available, uncomment this block and it will be tried first.
-  #
-  # VERSION=$(curl -fsSL "https://api.github.com/repos/guillermoBallester/isthmus/releases/latest" \
-  #   | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
-  #
-  # if [ -n "$VERSION" ]; then
-  #   BINARY_URL="https://github.com/guillermoBallester/isthmus/releases/download/v${VERSION}/isthmus-${OS}-${ARCH}"
-  #   info "Downloading isthmus v${VERSION} for ${OS}/${ARCH}..."
-  #   curl -fsSL -o /tmp/isthmus "$BINARY_URL"
-  #   chmod +x /tmp/isthmus
-  #   INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-  #   mv /tmp/isthmus "${INSTALL_DIR}/isthmus"
-  #   ok "Installed isthmus v${VERSION} to ${INSTALL_DIR}/isthmus"
-  #   exit 0
-  # fi
+  # --- Try downloading prebuilt binary from GitHub Releases ---
+  VERSION=$(curl -fsSL "https://api.github.com/repos/guillermoBallester/isthmus/releases/latest" \
+    | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/' 2>/dev/null) || true
 
-  # --- Phase 1: Build from source via go install ---
+  if [ -n "$VERSION" ]; then
+    ARCHIVE="isthmus_${VERSION}_${OS}_${ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/guillermoBallester/isthmus/releases/download/v${VERSION}/${ARCHIVE}"
+    info "Downloading isthmus v${VERSION} for ${OS}/${ARCH}..."
+    if curl -fsSL -o "/tmp/${ARCHIVE}" "$DOWNLOAD_URL"; then
+      tar -xzf "/tmp/${ARCHIVE}" -C /tmp isthmus
+      chmod +x /tmp/isthmus
+      INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+      mv /tmp/isthmus "${INSTALL_DIR}/isthmus"
+      rm -f "/tmp/${ARCHIVE}"
+      ok "Installed isthmus v${VERSION} to ${INSTALL_DIR}/isthmus"
+      exit 0
+    else
+      warn "Prebuilt binary not available for ${OS}/${ARCH}, falling back to go install..."
+    fi
+  fi
+
+  # --- Fallback: Build from source via go install ---
   if has_go; then
     CURRENT_GO=$(go_version)
     if version_gte "$CURRENT_GO" "$MIN_GO_VERSION"; then

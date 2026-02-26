@@ -116,10 +116,13 @@ Place this in your project root.
 
 <AccordionGroup>
   <Accordion title="Binary not found">
-    Use the full path to the binary:
+    Use the full path to the binary. The location depends on how you installed:
+
+    - **Install script / prebuilt binary:** `/usr/local/bin/isthmus`
+    - **go install:** `~/go/bin/isthmus`
 
     ```json
-    "command": "/Users/yourname/go/bin/isthmus"
+    "command": "/usr/local/bin/isthmus"
     ```
 
     Find the path with `which isthmus`.
