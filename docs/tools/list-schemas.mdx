@@ -1,0 +1,38 @@
+---
+title: "list_schemas"
+description: "Discover available database schemas."
+---
+
+## Description
+
+List all available database schemas. Call this first to discover what schemas exist before listing tables or describing them.
+
+When the `SCHEMAS` environment variable is set, only the allowed schemas are returned. Otherwise, all non-system schemas are listed.
+
+## Parameters
+
+*This tool takes no parameters.*
+
+## Response schema
+
+Returns an array of schema objects:
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Schema name |
+
+## Example response
+
+```json
+[
+  { "name": "public" },
+  { "name": "analytics" },
+  { "name": "staging" }
+]
+```
+
+## Notes
+
+- System schemas (`pg_catalog`, `information_schema`, `pg_toast`) are always excluded.
+- If `SCHEMAS` is set to `public,analytics`, only those two schemas appear in the response.
+- This is typically the first tool an AI model calls when exploring a new database.

@@ -1,0 +1,84 @@
+---
+title: "Windsurf"
+description: "Set up Isthmus with Windsurf IDE."
+---
+
+## Config file location
+
+<Tabs>
+  <Tab title="macOS / Linux">
+    ```
+    ~/.codeium/windsurf/mcp_config.json
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```
+    %USERPROFILE%\.codeium\windsurf\mcp_config.json
+    ```
+  </Tab>
+</Tabs>
+
+## Minimal configuration
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+## Full configuration
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--audit-log", "/tmp/isthmus-audit.ndjson"],
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb",
+        "SCHEMAS": "public,analytics",
+        "POLICY_FILE": "/path/to/policy.yaml",
+        "MAX_ROWS": "500"
+      }
+    }
+  }
+}
+```
+
+## Verify
+
+1. Save the config file
+2. Restart Windsurf
+3. Open the Cascade AI panel
+4. Ask: **"What tables are in my database?"**
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Binary not found">
+    Use the full path to the binary:
+
+    ```json
+    "command": "/Users/yourname/go/bin/isthmus"
+    ```
+
+    Find the path with `which isthmus`.
+  </Accordion>
+  <Accordion title="Config not picked up">
+    Ensure the file is at exactly `~/.codeium/windsurf/mcp_config.json`. Create the directory structure if it doesn't exist. Restart Windsurf after changes.
+  </Accordion>
+  <Accordion title="Database unreachable">
+    Test connectivity first:
+
+    ```bash
+    DATABASE_URL="postgres://user:password@localhost:5432/mydb" isthmus --dry-run
+    ```
+  </Accordion>
+</AccordionGroup>

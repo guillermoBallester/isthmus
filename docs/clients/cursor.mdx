@@ -1,0 +1,88 @@
+---
+title: "Cursor"
+description: "Set up Isthmus with Cursor IDE."
+---
+
+## Config file location
+
+Cursor supports project-level and global MCP configuration:
+
+<Tabs>
+  <Tab title="Project (recommended)">
+    ```
+    .cursor/mcp.json
+    ```
+    Place this in your project root. Cursor reads it when you open the project.
+  </Tab>
+  <Tab title="Global">
+    ```
+    ~/.cursor/mcp.json
+    ```
+    Applies to all projects.
+  </Tab>
+</Tabs>
+
+## Minimal configuration
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+## Full configuration
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--audit-log", "/tmp/isthmus-audit.ndjson"],
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb",
+        "SCHEMAS": "public,analytics",
+        "POLICY_FILE": "/path/to/policy.yaml",
+        "MAX_ROWS": "500"
+      }
+    }
+  }
+}
+```
+
+## Verify
+
+1. Save the config file
+2. Restart Cursor or reload the window
+3. Open the AI chat panel
+4. Ask: **"What tables are in my database?"**
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Binary not found">
+    Use the full path to the binary:
+
+    ```json
+    "command": "/Users/yourname/go/bin/isthmus"
+    ```
+
+    Find the path with `which isthmus`.
+  </Accordion>
+  <Accordion title="Config not picked up">
+    Make sure the file is named exactly `mcp.json` (not `mcp_config.json`) and is inside the `.cursor` directory. Restart Cursor after creating or editing the file.
+  </Accordion>
+  <Accordion title="Database unreachable">
+    Test connectivity first:
+
+    ```bash
+    DATABASE_URL="postgres://user:password@localhost:5432/mydb" isthmus --dry-run
+    ```
+  </Accordion>
+</AccordionGroup>

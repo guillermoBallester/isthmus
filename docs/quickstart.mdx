@@ -1,0 +1,77 @@
+---
+title: "Quickstart"
+description: "Get Isthmus running with Claude Desktop in under 5 minutes."
+---
+
+<Steps>
+  <Step title="Prerequisites">
+    You need:
+    - **Go 1.25+** — [install Go](https://go.dev/doc/install)
+    - **A PostgreSQL database** — any version 12+, accessible from your machine
+  </Step>
+
+  <Step title="Install Isthmus">
+    ```bash
+    go install github.com/guillermoBallester/isthmus/cmd/isthmus@latest
+    ```
+
+    Verify the binary is in your PATH:
+
+    ```bash
+    isthmus --version
+    ```
+  </Step>
+
+  <Step title="Configure your MCP client">
+    This example uses Claude Desktop. Open the config file:
+
+    <Tabs>
+      <Tab title="macOS">
+        ```bash
+        open ~/Library/Application\ Support/Claude/claude_desktop_config.json
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```
+        %APPDATA%\Claude\claude_desktop_config.json
+        ```
+      </Tab>
+    </Tabs>
+
+    Add the Isthmus server:
+
+    ```json
+    {
+      "mcpServers": {
+        "isthmus": {
+          "command": "isthmus",
+          "env": {
+            "DATABASE_URL": "postgres://user:password@localhost:5432/mydb"
+          }
+        }
+      }
+    }
+    ```
+
+    Replace the `DATABASE_URL` with your actual PostgreSQL connection string.
+
+    <Info>
+      See [Client Setup](/clients/claude-desktop) for other clients like Cursor, Windsurf, and VS Code.
+    </Info>
+  </Step>
+
+  <Step title="Restart and ask a question">
+    Restart Claude Desktop, then try:
+
+    > "What tables are in my database?"
+
+    Claude will call `list_schemas` and `list_tables` to discover your database structure, then summarize what it finds.
+  </Step>
+</Steps>
+
+## Next steps
+
+- [Installation](/installation) — all install methods including Docker and build from source
+- [Configuration](/configuration) — env vars, CLI flags, and a full reference table
+- [Tools Reference](/tools/overview) — what each tool does and how the AI uses them
+- [Policy Engine](/features/policy-engine) — enrich responses with business context

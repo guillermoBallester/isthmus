@@ -1,0 +1,161 @@
+---
+title: "describe_table"
+description: "Full table structure including columns, keys, indexes, and column statistics."
+---
+
+## Description
+
+Describe a table's full structure including: columns with types, nullability, defaults, and comments; column-level statistics from `pg_stats` (cardinality classification, null rates, enum-like values with frequencies, value ranges for dates/numbers); primary keys; foreign keys with referenced tables; indexes; check constraints; row estimate; table size; and statistics freshness.
+
+Use this to understand a table before writing queries. Pay attention to: foreign keys for JOIN paths; cardinality to know what to GROUP BY vs filter; enum-like columns show the allowed values; value ranges show date spans and numeric scales; null rates help you handle NULLs correctly in filters and JOINs.
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `table_name` | string | Yes | Name of the table to describe |
+| `schema` | string | No | Schema name (resolves automatically if omitted) |
+
+## Response schema
+
+| Field | Type | Description |
+|---|---|---|
+| `schema` | string | Schema name |
+| `name` | string | Table name |
+| `comment` | string | Table comment (omitted if empty) |
+| `row_estimate` | integer | Estimated row count |
+| `total_bytes` | integer | Total disk size in bytes (omitted if zero) |
+| `size_human` | string | Human-readable size (omitted if empty) |
+| `columns` | array | Column details (see below) |
+| `foreign_keys` | array | Foreign key constraints (see below) |
+| `indexes` | array | Index definitions (see below) |
+| `check_constraints` | array | Check constraints (see below) |
+| `stats_age` | string | Timestamp of last `ANALYZE` run (omitted if unknown) |
+
+### Column object
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Column name |
+| `data_type` | string | PostgreSQL data type |
+| `is_nullable` | boolean | Whether the column allows NULL |
+| `default_value` | string | Default expression (omitted if none) |
+| `is_primary_key` | boolean | Whether this column is part of the primary key |
+| `comment` | string | Column comment (omitted if empty) |
+| `stats` | object | Column statistics from `pg_stats` (omitted if unavailable) |
+
+### Column stats object
+
+| Field | Type | Description |
+|---|---|---|
+| `null_fraction` | float | Fraction of rows that are NULL (0.0–1.0) |
+| `cardinality` | string | Classification: `unique`, `near_unique`, `high_cardinality`, `low_cardinality`, `enum_like` |
+| `distinct_count` | integer | Estimated number of distinct values |
+| `most_common_vals` | array | Most frequent values (for `enum_like` / `low_cardinality` columns) |
+| `most_common_freqs` | array | Frequencies of most common values |
+| `min_value` | string | Minimum value (for date/numeric columns) |
+| `max_value` | string | Maximum value (for date/numeric columns) |
+
+### Foreign key object
+
+| Field | Type | Description |
+|---|---|---|
+| `constraint_name` | string | Constraint name |
+| `column_name` | string | Column in this table |
+| `referenced_table` | string | Referenced table (schema-qualified) |
+| `referenced_column` | string | Referenced column |
+
+### Index object
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Index name |
+| `definition` | string | Full `CREATE INDEX` statement |
+| `is_unique` | boolean | Whether the index enforces uniqueness |
+
+### Check constraint object
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Constraint name |
+| `expression` | string | Check expression |
+
+## Example response
+
+```json
+{
+  "schema": "public",
+  "name": "orders",
+  "row_estimate": 248000,
+  "total_bytes": 47185920,
+  "size_human": "45 MB",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "uuid",
+      "is_nullable": false,
+      "default_value": "gen_random_uuid()",
+      "is_primary_key": true,
+      "stats": {
+        "null_fraction": 0.0,
+        "cardinality": "unique",
+        "distinct_count": 248000
+      }
+    },
+    {
+      "name": "status",
+      "data_type": "text",
+      "is_nullable": false,
+      "is_primary_key": false,
+      "stats": {
+        "null_fraction": 0.0,
+        "cardinality": "enum_like",
+        "distinct_count": 6,
+        "most_common_vals": ["paid", "shipped", "delivered", "pending", "draft", "cancelled"],
+        "most_common_freqs": [0.35, 0.25, 0.20, 0.10, 0.05, 0.05]
+      }
+    },
+    {
+      "name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_value": "now()",
+      "is_primary_key": false,
+      "stats": {
+        "null_fraction": 0.0,
+        "cardinality": "high_cardinality",
+        "distinct_count": 185000,
+        "min_value": "2022-01-15T08:30:00Z",
+        "max_value": "2026-02-25T19:45:00Z"
+      }
+    }
+  ],
+  "foreign_keys": [
+    {
+      "constraint_name": "orders_customer_id_fkey",
+      "column_name": "customer_id",
+      "referenced_table": "public.customers",
+      "referenced_column": "id"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "orders_pkey",
+      "definition": "CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)",
+      "is_unique": true
+    },
+    {
+      "name": "orders_customer_id_idx",
+      "definition": "CREATE INDEX orders_customer_id_idx ON public.orders USING btree (customer_id)",
+      "is_unique": false
+    }
+  ],
+  "stats_age": "2026-02-25T12:00:00Z"
+}
+```
+
+## Notes
+
+- If `schema` is omitted, Isthmus resolves the table name across all allowed schemas. If the table name is ambiguous (exists in multiple schemas), provide the `schema` parameter.
+- Column statistics come from `pg_stats` and require `ANALYZE` to have run. If stats are unavailable, the `stats` field is omitted.
+- Cardinality classification thresholds: `unique` (100% distinct), `near_unique` (over 90%), `high_cardinality` (over 200 distinct), `low_cardinality` (21–200), `enum_like` (20 or fewer).

@@ -1,0 +1,85 @@
+---
+title: "Configuration"
+description: "All environment variables and CLI flags for configuring Isthmus."
+---
+
+Isthmus is configured via environment variables, with optional CLI flag overrides. The precedence order is:
+
+**CLI flags > Environment variables > Defaults**
+
+## Environment variables
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `DATABASE_URL` | string | **(required)** | PostgreSQL connection string, e.g. `postgres://user:pass@localhost:5432/mydb` |
+| `READ_ONLY` | bool | `true` | Wrap all queries in read-only transactions |
+| `MAX_ROWS` | int | `100` | Maximum rows returned per query |
+| `QUERY_TIMEOUT` | duration | `10s` | Query execution timeout (Go duration format, e.g. `30s`, `1m`) |
+| `SCHEMAS` | string | *(all non-system)* | Comma-separated list of schemas to expose, e.g. `public,analytics` |
+| `POLICY_FILE` | string | *(none)* | Path to a [policy YAML file](/features/policy-engine) for business context enrichment |
+| `LOG_LEVEL` | string | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+
+## CLI flags
+
+| Flag | Overrides env var | Description |
+|---|---|---|
+| `--database-url` | `DATABASE_URL` | PostgreSQL connection string |
+| `--log-level` | `LOG_LEVEL` | Log level: debug, info, warn, error |
+| `--max-rows` | `MAX_ROWS` | Maximum rows returned per query |
+| `--query-timeout` | `QUERY_TIMEOUT` | Query timeout duration, e.g. `30s` |
+| `--policy-file` | `POLICY_FILE` | Path to policy YAML file |
+| `--dry-run` | *(CLI only)* | Validate config, connect to DB, ping, then exit |
+| `--explain-only` | *(CLI only)* | Force all `query` calls to return EXPLAIN plans instead of results |
+| `--audit-log` | *(CLI only)* | Path to NDJSON file for [query audit logging](/features/audit-logging) |
+| `--version` | *(CLI only)* | Print version and exit |
+
+## Example .env file
+
+```bash
+DATABASE_URL=postgres://readonly:secret@localhost:5432/production
+MAX_ROWS=500
+QUERY_TIMEOUT=30s
+SCHEMAS=public,analytics
+POLICY_FILE=./policy.yaml
+LOG_LEVEL=info
+```
+
+## MCP client configuration
+
+When using Isthmus with an MCP client, environment variables are passed in the client's config file. For example, in Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "env": {
+        "DATABASE_URL": "postgres://readonly:secret@localhost:5432/production",
+        "MAX_ROWS": "500",
+        "SCHEMAS": "public,analytics",
+        "POLICY_FILE": "/path/to/policy.yaml"
+      }
+    }
+  }
+}
+```
+
+CLI flags can be passed via the `args` array:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--audit-log", "/tmp/isthmus-audit.ndjson", "--explain-only"],
+      "env": {
+        "DATABASE_URL": "postgres://readonly:secret@localhost:5432/production"
+      }
+    }
+  }
+}
+```
+
+<Note>
+  The source of truth for all configuration options is [`internal/config/config.go`](https://github.com/guillermoBallester/isthmus/blob/main/internal/config/config.go).
+</Note>
