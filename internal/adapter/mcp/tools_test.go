@@ -13,6 +13,7 @@ import (
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
@@ -118,11 +119,10 @@ func toolText(result *mcp.CallToolResult) string {
 
 func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockExecutor) *server.MCPServer {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	explorerSvc := service.NewExplorerService(explorer)
 
-	var profilerSvc *service.ProfilerService
+	var prof port.SchemaProfiler
 	if profiler != nil {
-		profilerSvc = service.NewProfilerService(profiler)
+		prof = profiler
 	}
 
 	var querySvc *service.QueryService
@@ -131,7 +131,7 @@ func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockE
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
-	RegisterTools(s, explorerSvc, profilerSvc, querySvc)
+	RegisterTools(s, explorer, prof, querySvc)
 	return s
 }
 

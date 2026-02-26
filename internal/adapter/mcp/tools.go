@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -61,7 +62,7 @@ const (
 	descExplainQuerySQL = "The SELECT query to explain (without the EXPLAIN keyword)"
 )
 
-func RegisterTools(s *server.MCPServer, explorer *service.ExplorerService, profiler *service.ProfilerService, query *service.QueryService) {
+func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler port.SchemaProfiler, query *service.QueryService) {
 	s.AddTool(
 		mcp.NewTool("list_schemas",
 			mcp.WithDescription(descListSchemas),
@@ -132,7 +133,7 @@ func RegisterTools(s *server.MCPServer, explorer *service.ExplorerService, profi
 	)
 }
 
-func listSchemasHandler(explorer *service.ExplorerService) server.ToolHandlerFunc {
+func listSchemasHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		schemas, err := explorer.ListSchemas(ctx)
 		if err != nil {
@@ -148,7 +149,7 @@ func listSchemasHandler(explorer *service.ExplorerService) server.ToolHandlerFun
 	}
 }
 
-func listTablesHandler(explorer *service.ExplorerService) server.ToolHandlerFunc {
+func listTablesHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tables, err := explorer.ListTables(ctx)
 		if err != nil {
@@ -164,7 +165,7 @@ func listTablesHandler(explorer *service.ExplorerService) server.ToolHandlerFunc
 	}
 }
 
-func describeTableHandler(explorer *service.ExplorerService) server.ToolHandlerFunc {
+func describeTableHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tableName, ok := request.GetArguments()["table_name"].(string)
 		if !ok || tableName == "" {
@@ -187,7 +188,7 @@ func describeTableHandler(explorer *service.ExplorerService) server.ToolHandlerF
 	}
 }
 
-func profileTableHandler(profiler *service.ProfilerService) server.ToolHandlerFunc {
+func profileTableHandler(profiler port.SchemaProfiler) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tableName, ok := request.GetArguments()["table_name"].(string)
 		if !ok || tableName == "" {
