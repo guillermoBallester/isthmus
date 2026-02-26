@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/guillermoBallester/isthmus/internal/audit"
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func TestQueryService_ValidSelect(t *testing.T) {
 	exec := &mockExecutor{
 		result: []map[string]any{{"id": 1, "name": "alice"}},
 	}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	rows, err := svc.Execute(context.Background(), "SELECT id, name FROM users")
 	require.NoError(t, err)
@@ -49,7 +50,7 @@ func TestQueryService_ValidSelect(t *testing.T) {
 
 func TestQueryService_RejectsInsert(t *testing.T) {
 	exec := &mockExecutor{}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "INSERT INTO users (name) VALUES ('bob')")
 	require.Error(t, err)
@@ -58,7 +59,7 @@ func TestQueryService_RejectsInsert(t *testing.T) {
 
 func TestQueryService_RejectsDrop(t *testing.T) {
 	exec := &mockExecutor{}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "DROP TABLE users")
 	require.Error(t, err)
@@ -67,7 +68,7 @@ func TestQueryService_RejectsDrop(t *testing.T) {
 
 func TestQueryService_RejectsDelete(t *testing.T) {
 	exec := &mockExecutor{}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "DELETE FROM users WHERE id = 1")
 	require.Error(t, err)
@@ -76,7 +77,7 @@ func TestQueryService_RejectsDelete(t *testing.T) {
 
 func TestQueryService_RejectsUpdate(t *testing.T) {
 	exec := &mockExecutor{}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "UPDATE users SET name = 'x'")
 	require.Error(t, err)
@@ -87,7 +88,7 @@ func TestQueryService_AllowsExplain(t *testing.T) {
 	exec := &mockExecutor{
 		result: []map[string]any{{"QUERY PLAN": "Seq Scan"}},
 	}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	rows, err := svc.Execute(context.Background(), "EXPLAIN SELECT 1")
 	require.NoError(t, err)
@@ -97,7 +98,7 @@ func TestQueryService_AllowsExplain(t *testing.T) {
 
 func TestQueryService_ExecutorError(t *testing.T) {
 	exec := &mockExecutor{err: fmt.Errorf("connection refused")}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "SELECT 1")
 	require.Error(t, err)
@@ -106,7 +107,7 @@ func TestQueryService_ExecutorError(t *testing.T) {
 
 func TestQueryService_EmptyQuery(t *testing.T) {
 	exec := &mockExecutor{}
-	svc := NewQueryService(domain.NewQueryValidator(), exec, testLogger())
+	svc := NewQueryService(domain.NewQueryValidator(), exec, audit.NoopAuditor{}, testLogger())
 
 	_, err := svc.Execute(context.Background(), "")
 	require.Error(t, err)

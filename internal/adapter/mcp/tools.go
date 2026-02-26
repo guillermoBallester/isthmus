@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/guillermoBallester/isthmus/internal/core/service"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -167,6 +168,7 @@ func explainQueryHandler(query *service.QueryService) server.ToolHandlerFunc {
 			prefix = "EXPLAIN ANALYZE "
 		}
 
+		ctx = service.WithToolName(ctx, "explain_query")
 		results, err := query.Execute(ctx, prefix+sql)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("explain failed: %v", err)), nil
@@ -188,6 +190,7 @@ func queryHandler(query *service.QueryService) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("sql is required"), nil
 		}
 
+		ctx = service.WithToolName(ctx, "query")
 		results, err := query.Execute(ctx, sql)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("query failed: %v", err)), nil
