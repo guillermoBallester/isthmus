@@ -58,6 +58,8 @@ func (a *FileAuditor) Record(_ context.Context, entry port.AuditEntry) {
 }
 
 func (a *FileAuditor) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.file.Close()
 }
 

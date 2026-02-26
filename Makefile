@@ -1,11 +1,13 @@
-.PHONY: build test test-short lint fmt vet tidy clean
-
-# Load .env file if it exists.
--include .env
-export
+.PHONY: build run dry-run test test-short lint fmt vet tidy clean
 
 build:
 	go build -o bin/isthmus ./cmd/isthmus
+
+run: build
+	@set -a && source .env && set +a && ./bin/isthmus
+
+dry-run: build
+	@set -a && source .env && set +a && ./bin/isthmus --dry-run
 
 test:
 	go test -race -count=1 ./...

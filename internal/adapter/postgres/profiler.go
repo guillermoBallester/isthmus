@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
@@ -19,20 +18,6 @@ type Profiler struct {
 
 func NewProfiler(pool *pgxpool.Pool, schemas []string) *Profiler {
 	return &Profiler{pool: pool, schemas: schemas}
-}
-
-// schemaFilter returns a SQL WHERE clause fragment and args for filtering by schema.
-func (p *Profiler) schemaFilter(column string, paramOffset int) (clause string, args []any) {
-	if len(p.schemas) == 0 {
-		return fmt.Sprintf("%s NOT IN ('pg_catalog', 'information_schema')", column), nil
-	}
-	placeholders := make([]string, len(p.schemas))
-	args = make([]any, len(p.schemas))
-	for i, s := range p.schemas {
-		placeholders[i] = fmt.Sprintf("$%d", paramOffset+i)
-		args[i] = s
-	}
-	return fmt.Sprintf("%s IN (%s)", column, strings.Join(placeholders, ", ")), args
 }
 
 func (p *Profiler) ProfileTable(ctx context.Context, schema, tableName string) (*port.TableProfile, error) {
@@ -94,13 +79,8 @@ func (p *Profiler) ProfileTable(ctx context.Context, schema, tableName string) (
 }
 
 func (p *Profiler) resolveSchema(ctx context.Context, tableName string) (string, error) {
-	filter, filterArgs := p.schemaFilter("n.nspname", 2) // $1 is tableName
-	query := fmt.Sprintf(`
-		SELECT n.nspname
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE c.relname = $1 AND c.relkind IN ('r', 'p') AND %s
-		LIMIT 1`, filter)
+	filter, filterArgs := schemaFilter(p.schemas, "n.nspname", 2) // $1 is tableName
+	query := fmt.Sprintf(queryResolveSchema, filter)
 
 	args := make([]any, 0, 1+len(filterArgs))
 	args = append(args, tableName)
@@ -149,20 +129,7 @@ func (p *Profiler) fetchSampleRows(ctx context.Context, schema, tableName string
 	}
 	defer rows.Close()
 
-	fields := rows.FieldDescriptions()
-	var result []map[string]any
-	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, fmt.Errorf("scanning sample row: %w", err)
-		}
-		row := make(map[string]any, len(fields))
-		for i, fd := range fields {
-			row[fd.Name] = vals[i]
-		}
-		result = append(result, row)
-	}
-	return result, rows.Err()
+	return rowsToMaps(rows)
 }
 
 func (p *Profiler) fetchIndexUsage(ctx context.Context, schema, tableName string) ([]port.IndexUsage, error) {
@@ -261,13 +228,7 @@ type pkInfo struct {
 }
 
 func (p *Profiler) getTableColumns(ctx context.Context, schema, tableName string) ([]colInfo, error) {
-	rows, err := p.pool.Query(ctx, `
-		SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod)
-		FROM pg_attribute a
-		JOIN pg_class c ON c.oid = a.attrelid
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
-		ORDER BY a.attnum`, schema, tableName)
+	rows, err := p.pool.Query(ctx, queryProfilerColumns, schema, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("getting table columns: %w", err)
 	}
@@ -285,13 +246,7 @@ func (p *Profiler) getTableColumns(ctx context.Context, schema, tableName string
 }
 
 func (p *Profiler) getExplicitFKColumns(ctx context.Context, schema, tableName string) (map[string]bool, error) {
-	rows, err := p.pool.Query(ctx, `
-		SELECT kcu.column_name
-		FROM information_schema.table_constraints tc
-		JOIN information_schema.key_column_usage kcu
-			ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-		WHERE tc.constraint_type = 'FOREIGN KEY'
-			AND tc.table_schema = $1 AND tc.table_name = $2`, schema, tableName)
+	rows, err := p.pool.Query(ctx, queryExplicitFKColumns, schema, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("getting explicit FKs: %w", err)
 	}
@@ -309,14 +264,8 @@ func (p *Profiler) getExplicitFKColumns(ctx context.Context, schema, tableName s
 }
 
 func (p *Profiler) buildPKIndex(ctx context.Context) (map[string]pkInfo, error) {
-	filter, args := p.schemaFilter("n.nspname", 1)
-	query := fmt.Sprintf(`
-		SELECT c.relname, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod)
-		FROM pg_index i
-		JOIN pg_class c ON c.oid = i.indrelid
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-		WHERE i.indisprimary AND %s`, filter)
+	filter, args := schemaFilter(p.schemas, "n.nspname", 1)
+	query := fmt.Sprintf(queryPKIndex, filter)
 
 	rows, err := p.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -336,35 +285,4 @@ func (p *Profiler) buildPKIndex(ctx context.Context) (map[string]pkInfo, error) 
 		}
 	}
 	return result, rows.Err()
-}
-
-// isTypeCompatible checks if two column types are compatible for FK inference.
-func isTypeCompatible(a, b string) bool {
-	a = strings.ToLower(a)
-	b = strings.ToLower(b)
-
-	intTypes := map[string]bool{
-		"integer": true, "bigint": true, "smallint": true, "int": true,
-		"int4": true, "int8": true, "int2": true, "serial": true,
-		"bigserial": true, "smallserial": true,
-	}
-
-	uuidTypes := map[string]bool{"uuid": true}
-	textTypes := map[string]bool{"text": true, "character varying": true, "varchar": true}
-
-	if intTypes[a] && intTypes[b] {
-		return true
-	}
-	if uuidTypes[a] && uuidTypes[b] {
-		return true
-	}
-	if textTypes[a] && textTypes[b] {
-		return true
-	}
-	return a == b
-}
-
-// quoteIdent quotes a SQL identifier to prevent injection.
-func quoteIdent(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

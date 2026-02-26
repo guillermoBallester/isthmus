@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,23 +17,8 @@ func NewExplorer(pool *pgxpool.Pool, schemas []string) *Explorer {
 	return &Explorer{pool: pool, schemas: schemas}
 }
 
-// schemaFilter returns a SQL WHERE clause fragment and args for filtering by schema.
-// paramOffset is the starting $N parameter index (1-based).
-func (e *Explorer) schemaFilter(column string, paramOffset int) (clause string, args []any) {
-	if len(e.schemas) == 0 {
-		return fmt.Sprintf("%s NOT IN ('pg_catalog', 'information_schema')", column), nil
-	}
-	placeholders := make([]string, len(e.schemas))
-	args = make([]any, len(e.schemas))
-	for i, s := range e.schemas {
-		placeholders[i] = fmt.Sprintf("$%d", paramOffset+i)
-		args[i] = s
-	}
-	return fmt.Sprintf("%s IN (%s)", column, strings.Join(placeholders, ", ")), args
-}
-
 func (e *Explorer) ListSchemas(ctx context.Context) ([]port.SchemaInfo, error) {
-	filter, args := e.schemaFilter("s.schema_name", 1)
+	filter, args := schemaFilter(e.schemas, "s.schema_name", 1)
 	query := fmt.Sprintf(queryListSchemas, filter)
 
 	rows, err := e.pool.Query(ctx, query, args...)
@@ -55,7 +39,7 @@ func (e *Explorer) ListSchemas(ctx context.Context) ([]port.SchemaInfo, error) {
 }
 
 func (e *Explorer) ListTables(ctx context.Context) ([]port.TableInfo, error) {
-	filter, args := e.schemaFilter("t.table_schema", 1)
+	filter, args := schemaFilter(e.schemas, "t.table_schema", 1)
 	query := fmt.Sprintf(queryListTables, filter)
 
 	rows, err := e.pool.Query(ctx, query, args...)

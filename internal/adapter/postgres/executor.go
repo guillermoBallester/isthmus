@@ -52,24 +52,9 @@ func (e *Executor) Execute(ctx context.Context, sql string) ([]map[string]any, e
 	}
 	defer rows.Close()
 
-	fieldDescs := rows.FieldDescriptions()
-	var results []map[string]any
-
-	for rows.Next() {
-		values, err := rows.Values()
-		if err != nil {
-			return nil, fmt.Errorf("reading row values: %w", err)
-		}
-
-		row := make(map[string]any, len(fieldDescs))
-		for i, fd := range fieldDescs {
-			row[fd.Name] = values[i]
-		}
-		results = append(results, row)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating rows: %w", err)
+	results, err := rowsToMaps(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

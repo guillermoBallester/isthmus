@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"strings"
 
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 )
@@ -18,7 +17,7 @@ func NewExplainOnlyExecutor(inner port.QueryExecutor) *ExplainOnlyExecutor {
 }
 
 func (e *ExplainOnlyExecutor) Execute(ctx context.Context, sql string) ([]map[string]any, error) {
-	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "EXPLAIN") {
+	if !isExplain(sql) {
 		sql = "EXPLAIN " + sql
 	}
 	return e.inner.Execute(ctx, sql)
