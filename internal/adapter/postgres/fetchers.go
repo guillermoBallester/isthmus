@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 )
 
@@ -140,14 +142,15 @@ func (e *Explorer) fetchColumnStats(ctx context.Context, schema, tableName strin
 			return fmt.Errorf("scanning column stats: %w", err)
 		}
 
+		absDistinct := pgDistinctToAbsolute(nDistinct, rowEstimate)
 		stats := &port.ColumnStats{
-			NullFraction: nullFrac,
-			NDistinct:    nDistinct,
-			Cardinality:  classifyCardinality(nDistinct, rowEstimate),
+			NullFraction:  nullFrac,
+			DistinctCount: absDistinct,
+			Cardinality:   domain.ClassifyByDistinctCount(absDistinct, rowEstimate),
 		}
 
 		// Parse most common values for enum-like columns.
-		if stats.Cardinality == port.CardinalityEnumLike && mcvRaw != nil {
+		if stats.Cardinality == domain.CardinalityEnumLike && mcvRaw != nil {
 			stats.MostCommonVals = parsePgArray(*mcvRaw)
 			if mcfRaw != nil {
 				stats.MostCommonFreqs = parsePgFloatArray(*mcfRaw)
@@ -217,32 +220,19 @@ func (e *Explorer) fetchStatsAge(ctx context.Context, schema, tableName string) 
 	return ts, nil
 }
 
-// classifyCardinality determines the cardinality class based on pg_stats n_distinct.
-// n_distinct semantics:
-//   - -1.0 = all values unique
+// pgDistinctToAbsolute converts pg_stats n_distinct to an absolute distinct count.
+// pg_stats semantics:
+//   - -1.0 = all values unique → returns rowEstimate
 //   - negative = fraction of rows that are distinct (e.g., -0.5 = 50% unique)
 //   - positive = estimated number of distinct values
-func classifyCardinality(nDistinct float64, rowEstimate int64) port.CardinalityClass {
+func pgDistinctToAbsolute(nDistinct float64, rowEstimate int64) int64 {
 	if nDistinct == -1 {
-		return port.CardinalityUnique
+		return rowEstimate
 	}
-
 	if nDistinct < 0 {
-		ratio := -nDistinct
-		if ratio >= 0.9 {
-			return port.CardinalityNearUnique
-		}
-		// Convert to estimated distinct count.
-		nDistinct = ratio * float64(rowEstimate)
+		return int64(math.Round(-nDistinct * float64(rowEstimate)))
 	}
-
-	if nDistinct <= 20 {
-		return port.CardinalityEnumLike
-	}
-	if nDistinct <= 200 {
-		return port.CardinalityLowCardinality
-	}
-	return port.CardinalityHighCardinality
+	return int64(math.Round(nDistinct))
 }
 
 // parsePgArray parses a PostgreSQL text array representation like {val1,val2,val3}.
