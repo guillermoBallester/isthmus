@@ -17,18 +17,32 @@ type Config struct {
 	Schemas      []string // empty means all non-system schemas
 	PolicyFile   string   // optional path to policy YAML
 	LogLevel     slog.Level
+
+	// CLI-only fields (not settable via env vars).
+	DryRun      bool
+	ExplainOnly bool
+	AuditLog    string // path to NDJSON audit log file
 }
 
-func Load() (*Config, error) {
+// Overrides holds CLI flag values that override environment variables.
+// Pointer fields distinguish "not set" from zero values.
+type Overrides struct {
+	DatabaseURL  *string
+	LogLevel     *string
+	MaxRows      *int
+	QueryTimeout *time.Duration
+	PolicyFile   *string
+	DryRun       bool
+	ExplainOnly  bool
+	AuditLog     string
+}
+
+func Load(overrides Overrides) (*Config, error) {
 	cfg := &Config{
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
 		ReadOnly:     true,
 		MaxRows:      100,
 		QueryTimeout: 10 * time.Second,
-	}
-
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL environment variable is required")
 	}
 
 	if v := os.Getenv("READ_ONLY"); v != "" {
@@ -73,6 +87,38 @@ func Load() (*Config, error) {
 	}
 
 	cfg.PolicyFile = os.Getenv("POLICY_FILE")
+
+	// CLI flag overrides (take precedence over env vars).
+	if overrides.DatabaseURL != nil {
+		cfg.DatabaseURL = *overrides.DatabaseURL
+	}
+	if cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required (set via env var or --database-url flag)")
+	}
+
+	if overrides.LogLevel != nil {
+		level, err := parseLogLevel(*overrides.LogLevel)
+		if err != nil {
+			return nil, err
+		}
+		cfg.LogLevel = level
+	}
+	if overrides.MaxRows != nil {
+		if *overrides.MaxRows <= 0 {
+			return nil, fmt.Errorf("invalid --max-rows value: must be a positive integer")
+		}
+		cfg.MaxRows = *overrides.MaxRows
+	}
+	if overrides.QueryTimeout != nil {
+		cfg.QueryTimeout = *overrides.QueryTimeout
+	}
+	if overrides.PolicyFile != nil {
+		cfg.PolicyFile = *overrides.PolicyFile
+	}
+
+	cfg.DryRun = overrides.DryRun
+	cfg.ExplainOnly = overrides.ExplainOnly
+	cfg.AuditLog = overrides.AuditLog
 
 	return cfg, nil
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/guillermoBallester/isthmus/internal/audit"
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
@@ -110,7 +111,7 @@ func setupServer(explorer *mockExplorer, executor *mockExecutor) *server.MCPServ
 
 	var querySvc *service.QueryService
 	if executor != nil {
-		querySvc = service.NewQueryService(domain.NewQueryValidator(), executor, logger)
+		querySvc = service.NewQueryService(domain.NewQueryValidator(), executor, audit.NoopAuditor{}, logger)
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
