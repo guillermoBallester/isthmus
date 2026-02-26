@@ -9,7 +9,7 @@ import (
 var errAny = errors.New("any error")
 
 func TestQueryValidator_Validate(t *testing.T) {
-	v := NewQueryValidator()
+	v := NewPgQueryValidator()
 
 	tests := []struct {
 		name    string

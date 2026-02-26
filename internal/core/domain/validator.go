@@ -14,16 +14,16 @@ var (
 	ErrMultiStatement = errors.New("multiple statements are not allowed")
 )
 
-// QueryValidator validates SQL statements using PostgreSQL's actual parser.
+// PgQueryValidator validates SQL statements using PostgreSQL's actual parser.
 // Only SELECT statements are permitted (whitelist approach).
-type QueryValidator struct{}
+type PgQueryValidator struct{}
 
-func NewQueryValidator() *QueryValidator {
-	return &QueryValidator{}
+func NewPgQueryValidator() *PgQueryValidator {
+	return &PgQueryValidator{}
 }
 
 // Validate parses the SQL and rejects anything that isn't a single SELECT statement.
-func (v *QueryValidator) Validate(sql string) error {
+func (v *PgQueryValidator) Validate(sql string) error {
 	trimmed := strings.TrimSpace(sql)
 	if trimmed == "" {
 		return ErrEmptyQuery

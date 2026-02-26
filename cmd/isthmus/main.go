@@ -144,7 +144,7 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 }
 
 func serve(ctx context.Context, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, auditor port.QueryAuditor, logger *slog.Logger) error {
-	validator := domain.NewQueryValidator()
+	validator := domain.NewPgQueryValidator()
 
 	explorerSvc := service.NewExplorerService(explorer)
 	profilerSvc := service.NewProfilerService(profiler)

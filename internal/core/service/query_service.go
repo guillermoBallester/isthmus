@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 )
 
@@ -25,13 +24,13 @@ func toolNameFromCtx(ctx context.Context) string {
 
 // QueryService orchestrates SQL validation (domain) and execution (infrastructure).
 type QueryService struct {
-	validator *domain.QueryValidator
+	validator port.QueryValidator
 	executor  port.QueryExecutor
 	auditor   port.QueryAuditor
 	logger    *slog.Logger
 }
 
-func NewQueryService(validator *domain.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger) *QueryService {
+func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger) *QueryService {
 	return &QueryService{
 		validator: validator,
 		executor:  executor,
