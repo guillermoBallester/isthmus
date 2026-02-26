@@ -1,0 +1,39 @@
+# Isthmus Policy File — Data Dictionary (Context)
+#
+# This file enriches MCP tool responses (describe_table, list_tables) with
+# business descriptions so the LLM understands what each table and column means.
+#
+# Usage:
+#   POLICY_FILE=policy.yaml isthmus-agent
+#
+# Keys are fully-qualified: schema.table_name
+# YAML descriptions only fill empty comments — Postgres COMMENT ON values
+# always take precedence.
+
+context:
+  tables:
+    public.customers:
+      description: "Registered platform customers. One row per customer account."
+      columns:
+        id: "Unique customer identifier (UUID)"
+        email: "Primary email address, used for login and notifications"
+        name: "Full display name"
+        created_at: "Account creation timestamp (UTC)"
+
+    public.orders:
+      description: "Purchase orders. Lifecycle: draft -> pending -> paid -> shipped -> delivered."
+      columns:
+        id: "Unique order identifier (UUID)"
+        customer_id: "FK to customers.id — the buyer"
+        status: "Order status: draft, pending, paid, shipped, delivered, cancelled"
+        amount_cents: "Order total in cents (USD), before tax"
+        created_at: "Order creation timestamp (UTC)"
+
+    public.products:
+      description: "Product catalog. Each row is a distinct SKU."
+      columns:
+        id: "Unique product identifier (UUID)"
+        name: "Product display name"
+        price_cents: "Unit price in cents (USD)"
+        category: "Product category for filtering and reporting"
+        stock: "Current inventory count"
