@@ -19,7 +19,7 @@ func TestNewFileAuditor_CreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
-	defer fa.Close()
+	defer func() { require.NoError(t, fa.Close()) }()
 
 	_, err = os.Stat(path)
 	assert.NoError(t, err)
@@ -95,7 +95,7 @@ func TestFileAuditor_Record_MultipleEntries(t *testing.T) {
 
 	f, err := os.Open(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	scanner := bufio.NewScanner(f)
 	var count int
@@ -128,7 +128,7 @@ func TestFileAuditor_Record_ConcurrentWrites(t *testing.T) {
 
 	f, err := os.Open(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	scanner := bufio.NewScanner(f)
 	var count int
@@ -157,7 +157,7 @@ func TestFileAuditor_Append(t *testing.T) {
 
 	f, err := os.Open(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	scanner := bufio.NewScanner(f)
 	var count int
