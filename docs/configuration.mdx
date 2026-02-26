@@ -7,31 +7,21 @@ Isthmus is configured via environment variables, with optional CLI flag override
 
 **CLI flags > Environment variables > Defaults**
 
-## Environment variables
+## Options
 
-| Variable | Type | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | string | **(required)** | PostgreSQL connection string, e.g. `postgres://user:pass@localhost:5432/mydb` |
-| `READ_ONLY` | bool | `true` | Wrap all queries in read-only transactions |
-| `MAX_ROWS` | int | `100` | Maximum rows returned per query |
-| `QUERY_TIMEOUT` | duration | `10s` | Query execution timeout (Go duration format, e.g. `30s`, `1m`) |
-| `SCHEMAS` | string | *(all non-system)* | Comma-separated list of schemas to expose, e.g. `public,analytics` |
-| `POLICY_FILE` | string | *(none)* | Path to a [policy YAML file](/features/policy-engine) for business context enrichment |
-| `LOG_LEVEL` | string | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-
-## CLI flags
-
-| Flag | Overrides env var | Description |
-|---|---|---|
-| `--database-url` | `DATABASE_URL` | PostgreSQL connection string |
-| `--log-level` | `LOG_LEVEL` | Log level: debug, info, warn, error |
-| `--max-rows` | `MAX_ROWS` | Maximum rows returned per query |
-| `--query-timeout` | `QUERY_TIMEOUT` | Query timeout duration, e.g. `30s` |
-| `--policy-file` | `POLICY_FILE` | Path to policy YAML file |
-| `--dry-run` | *(CLI only)* | Validate config, connect to DB, ping, then exit |
-| `--explain-only` | *(CLI only)* | Force all `query` calls to return EXPLAIN plans instead of results |
-| `--audit-log` | *(CLI only)* | Path to NDJSON file for [query audit logging](/features/audit-logging) |
-| `--version` | *(CLI only)* | Print version and exit |
+| Option | Env var | CLI flag | Type | Default | Description |
+|---|---|---|---|---|---|
+| Database URL | `DATABASE_URL` | `--database-url` | string | **(required)** | PostgreSQL connection string, e.g. `postgres://user:pass@localhost:5432/mydb` |
+| Read only | `READ_ONLY` | — | bool | `true` | Wrap all queries in read-only transactions |
+| Max rows | `MAX_ROWS` | `--max-rows` | int | `100` | Maximum rows returned per query |
+| Query timeout | `QUERY_TIMEOUT` | `--query-timeout` | duration | `10s` | Query execution timeout (Go duration format, e.g. `30s`, `1m`) |
+| Schemas | `SCHEMAS` | — | string | *(all non-system)* | Comma-separated list of schemas to expose, e.g. `public,analytics` |
+| Policy file | `POLICY_FILE` | `--policy-file` | string | *(none)* | Path to a [policy YAML file](/features/policy-engine) for business context enrichment |
+| Log level | `LOG_LEVEL` | `--log-level` | string | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| Dry run | — | `--dry-run` | bool | `false` | Validate config, connect to DB, ping, then exit |
+| Explain only | — | `--explain-only` | bool | `false` | Force all `query` calls to return EXPLAIN plans instead of results |
+| Audit log | — | `--audit-log` | string | *(none)* | Path to NDJSON file for [query audit logging](/features/audit-logging) |
+| Version | — | `--version` | bool | — | Print version and exit |
 
 ## Example .env file
 
