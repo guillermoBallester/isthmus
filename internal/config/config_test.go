@@ -121,3 +121,110 @@ func TestLoad_DatabaseURLFromFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "postgres://flag-host/db", cfg.DatabaseURL)
 }
+
+func TestLoad_MaxRowsZero(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("MAX_ROWS", "0")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MAX_ROWS")
+}
+
+func TestLoad_MaxRowsNonNumeric(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("MAX_ROWS", "abc")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MAX_ROWS")
+}
+
+func TestLoad_MaxRowsOverrideZero(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	maxRows := 0
+	_, err := Load(Overrides{MaxRows: &maxRows})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max-rows")
+}
+
+func TestLoad_MaxRowsOverrideNegative(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	maxRows := -5
+	_, err := Load(Overrides{MaxRows: &maxRows})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max-rows")
+}
+
+func TestLoad_SchemasWithEmptySegments(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("SCHEMAS", "public,,app, ,sales")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"public", "app", "sales"}, cfg.Schemas)
+}
+
+func TestLoad_SchemasTrailingComma(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("SCHEMAS", "public,")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"public"}, cfg.Schemas)
+}
+
+func TestLoad_LogLevelWarning(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("LOG_LEVEL", "warning")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, slog.LevelWarn, cfg.LogLevel)
+}
+
+func TestLoad_LogLevelCaseInsensitive(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("LOG_LEVEL", "DEBUG")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
+}
+
+func TestLoad_LogLevelOverrideInvalid(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	level := "verbose"
+	_, err := Load(Overrides{LogLevel: &level})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "LOG_LEVEL")
+}
+
+func TestLoad_Defaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+
+	assert.True(t, cfg.ReadOnly)
+	assert.Equal(t, 100, cfg.MaxRows)
+	assert.Equal(t, 10*time.Second, cfg.QueryTimeout)
+	assert.Equal(t, slog.LevelInfo, cfg.LogLevel)
+	assert.Empty(t, cfg.Schemas)
+	assert.Empty(t, cfg.PolicyFile)
+	assert.False(t, cfg.DryRun)
+	assert.False(t, cfg.ExplainOnly)
+	assert.Empty(t, cfg.AuditLog)
+}
+
+func TestLoad_QueryTimeoutOverride(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	timeout := 500 * time.Millisecond
+	cfg, err := Load(Overrides{QueryTimeout: &timeout})
+	require.NoError(t, err)
+	assert.Equal(t, 500*time.Millisecond, cfg.QueryTimeout)
+}
