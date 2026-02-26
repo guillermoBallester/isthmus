@@ -18,6 +18,7 @@ import (
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
 	"github.com/guillermoBallester/isthmus/internal/policy"
+	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -41,11 +42,7 @@ func run() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Logs go to stderr — stdout is reserved for the MCP stdio transport.
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: cfg.LogLevel,
-	}))
-
+	logger := newLogger(cfg)
 	logger.Info("starting isthmus",
 		slog.String("version", version),
 		slog.String("log_level", cfg.LogLevel.String()),
@@ -57,70 +54,103 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := connectDB(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer pool.Close()
-
 	logger.Info("database pool connected", slog.String("db.system", "postgresql"))
 
-	// --dry-run: ping succeeded (NewPool pings), print resolved config, exit.
 	if cfg.DryRun {
 		printResolvedConfig(cfg)
 		return nil
 	}
 
-	// Adapters
-	var explorer port.SchemaExplorer = postgres.NewExplorer(pool, cfg.Schemas)
-	var executor port.QueryExecutor = postgres.NewExecutor(pool, cfg.ReadOnly, cfg.MaxRows, cfg.QueryTimeout)
+	explorer, err := buildExplorer(pool, cfg, logger)
+	if err != nil {
+		return err
+	}
+	executor := buildExecutor(pool, cfg, logger)
 	profiler := postgres.NewProfiler(pool, cfg.Schemas)
 
-	// Policy decorator (optional).
+	auditor, closeAuditor, err := buildAuditor(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer closeAuditor()
+
+	return serve(ctx, version, explorer, executor, profiler, auditor, logger)
+}
+
+func newLogger(cfg *config.Config) *slog.Logger {
+	// Logs go to stderr — stdout is reserved for the MCP stdio transport.
+	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: cfg.LogLevel,
+	}))
+}
+
+func connectDB(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to database: %w", err)
+	}
+	return pool, nil
+}
+
+func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) (port.SchemaExplorer, error) {
+	var explorer port.SchemaExplorer = postgres.NewExplorer(pool, cfg.Schemas)
+
 	if cfg.PolicyFile != "" {
 		pol, err := policy.LoadFromFile(cfg.PolicyFile)
 		if err != nil {
-			return fmt.Errorf("loading policy: %w", err)
+			return nil, fmt.Errorf("loading policy: %w", err)
 		}
 		explorer = policy.NewPolicyExplorer(explorer, pol)
 		logger.Info("policy loaded", slog.String("file", cfg.PolicyFile))
 	}
 
-	// --explain-only: wrap executor so all queries become EXPLAIN.
+	return explorer, nil
+}
+
+func buildExecutor(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) port.QueryExecutor {
+	var executor port.QueryExecutor = postgres.NewExecutor(pool, cfg.ReadOnly, cfg.MaxRows, cfg.QueryTimeout)
+
 	if cfg.ExplainOnly {
 		executor = postgres.NewExplainOnlyExecutor(executor)
 		logger.Info("explain-only mode enabled")
 	}
 
-	// Audit logging.
-	var auditor port.QueryAuditor = audit.NoopAuditor{}
-	if cfg.AuditLog != "" {
-		fa, err := audit.NewFileAuditor(cfg.AuditLog)
-		if err != nil {
-			return fmt.Errorf("opening audit log %q: %w", cfg.AuditLog, err)
-		}
-		defer func(fa *audit.FileAuditor) {
-			err := fa.Close()
-			if err != nil {
-				_ = fmt.Errorf("error closing file auditor: %w", err)
-			}
-		}(fa)
-		auditor = fa
-		logger.Info("audit logging enabled", slog.String("file", cfg.AuditLog))
+	return executor
+}
+
+func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, func(), error) {
+	if cfg.AuditLog == "" {
+		return audit.NoopAuditor{}, func() {}, nil
 	}
 
-	// Domain
+	fa, err := audit.NewFileAuditor(cfg.AuditLog)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opening audit log %q: %w", cfg.AuditLog, err)
+	}
+	logger.Info("audit logging enabled", slog.String("file", cfg.AuditLog))
+
+	closeFn := func() {
+		if err := fa.Close(); err != nil {
+			logger.Error("closing audit log", slog.String("error", err.Error()))
+		}
+	}
+
+	return fa, closeFn, nil
+}
+
+func serve(ctx context.Context, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, auditor port.QueryAuditor, logger *slog.Logger) error {
 	validator := domain.NewQueryValidator()
 
-	// Services
 	explorerSvc := service.NewExplorerService(explorer)
 	profilerSvc := service.NewProfilerService(profiler)
 	querySvc := service.NewQueryService(validator, executor, auditor, logger)
 
-	// MCP server with tool handlers.
-	mcpServer := mcp.NewServer(version, explorerSvc, profilerSvc, querySvc, logger)
-
-	// Run MCP over stdio (stdin/stdout).
+	mcpServer := mcp.NewServer(ver, explorerSvc, profilerSvc, querySvc, logger)
 	stdioServer := mcpserver.NewStdioServer(mcpServer)
 
 	logger.Info("serving MCP over stdio")
