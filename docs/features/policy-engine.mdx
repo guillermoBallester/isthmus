@@ -1,0 +1,120 @@
+---
+title: "Policy Engine"
+description: "Enrich MCP tool responses with business context using a YAML policy file."
+---
+
+The policy engine lets you attach business descriptions to tables and columns via a YAML file. These descriptions are merged into `describe_table` and `list_tables` responses, giving the AI model context about what your data means — not just what types it has.
+
+## Enabling the policy engine
+
+Set the `POLICY_FILE` environment variable or `--policy-file` CLI flag to the path of your YAML file:
+
+```bash
+POLICY_FILE=./policy.yaml isthmus
+```
+
+Or in your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "env": {
+        "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb",
+        "POLICY_FILE": "/path/to/policy.yaml"
+      }
+    }
+  }
+}
+```
+
+## YAML format
+
+```yaml
+context:
+  tables:
+    schema.table_name:
+      description: "Business description of the table"
+      columns:
+        column_name: "Business description of the column"
+```
+
+Keys are fully qualified: `schema.table_name`. Descriptions only fill empty comments — Postgres `COMMENT ON` values always take precedence.
+
+## Full example
+
+```yaml
+context:
+  tables:
+    public.customers:
+      description: "Registered platform customers. One row per customer account."
+      columns:
+        id: "Unique customer identifier (UUID)"
+        email: "Primary email address, used for login and notifications"
+        name: "Full display name"
+        created_at: "Account creation timestamp (UTC)"
+
+    public.orders:
+      description: "Purchase orders. Lifecycle: draft -> pending -> paid -> shipped -> delivered."
+      columns:
+        id: "Unique order identifier (UUID)"
+        customer_id: "FK to customers.id — the buyer"
+        status: "Order status: draft, pending, paid, shipped, delivered, cancelled"
+        amount_cents: "Order total in cents (USD), before tax"
+        created_at: "Order creation timestamp (UTC)"
+
+    public.products:
+      description: "Product catalog. Each row is a distinct SKU."
+      columns:
+        id: "Unique product identifier (UUID)"
+        name: "Product display name"
+        price_cents: "Unit price in cents (USD)"
+        category: "Product category for filtering and reporting"
+        stock: "Current inventory count"
+```
+
+## How enrichment works
+
+Without a policy file, `describe_table` returns raw schema information:
+
+```json
+{
+  "name": "amount_cents",
+  "data_type": "integer",
+  "is_nullable": false,
+  "is_primary_key": false
+}
+```
+
+With the policy file above, the same column includes a comment:
+
+```json
+{
+  "name": "amount_cents",
+  "data_type": "integer",
+  "is_nullable": false,
+  "is_primary_key": false,
+  "comment": "Order total in cents (USD), before tax"
+}
+```
+
+This tells the AI model that `amount_cents` is in cents and in USD — so it knows to divide by 100 when displaying amounts, and not to confuse it with other currencies.
+
+## Tips for writing descriptions
+
+- **Be specific about units** — "Price in cents (USD)" is better than "Price"
+- **Document enum values** — "Status: draft, pending, paid, shipped, delivered, cancelled"
+- **Explain relationships** — "FK to customers.id — the buyer"
+- **Describe lifecycles** — "Lifecycle: draft -> pending -> paid -> shipped -> delivered"
+- **Clarify ambiguous names** — "created_at: Account creation timestamp (UTC)" vs. just "timestamp"
+- **Think like an AI** — what would you need to know to write correct SQL against this table?
+
+## Validation
+
+The policy file is validated at startup. Isthmus will reject files with:
+
+- Empty table keys
+- Empty column keys within a table
+
+If the policy file is invalid, Isthmus exits with an error before starting the MCP server.

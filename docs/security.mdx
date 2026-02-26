@@ -1,0 +1,94 @@
+---
+title: "Security"
+description: "Isthmus's safety model: how it protects your database from unintended AI operations."
+---
+
+Isthmus is designed to be safe to point at production databases. Multiple independent layers ensure the AI can only read data, and only the data you allow.
+
+## Local-only architecture
+
+Isthmus runs entirely on your machine. It communicates with your AI client over stdio (standard input/output) — no network ports are opened, no data leaves your machine, and no cloud service is involved.
+
+## Defense in depth
+
+### 1. SQL AST validation
+
+Every query is parsed using PostgreSQL's actual parser (`pg_query`) and validated at the AST level. Only `SELECT` and `EXPLAIN` statements are allowed. This is not regex matching — it uses the same parser that PostgreSQL itself runs.
+
+See [SQL Validation](/features/sql-validation) for details.
+
+### 2. Read-only transactions
+
+All queries execute inside read-only transactions (`SET TRANSACTION READ ONLY`). Even if a write query somehow passed AST validation, PostgreSQL would reject it.
+
+### 3. Row limits
+
+Results are capped at `MAX_ROWS` (default: 100). This prevents accidental data dumps from `SELECT *` on large tables.
+
+### 4. Query timeout
+
+Queries are cancelled after `QUERY_TIMEOUT` (default: 10s). This prevents runaway queries from consuming database resources.
+
+### 5. Schema filtering
+
+The `SCHEMAS` environment variable restricts which schemas the AI can discover. Only listed schemas appear in `list_schemas`, `list_tables`, and `describe_table` results.
+
+See [Schema Filtering](/features/schema-filtering) for details.
+
+### 6. Policy engine
+
+The policy file enriches responses with business context but also acts as a documentation layer — operators can describe exactly what data means, reducing the chance of AI misinterpretation.
+
+See [Policy Engine](/features/policy-engine) for details.
+
+### 7. Explain-only mode
+
+The `--explain-only` flag forces all `query` calls to return `EXPLAIN` plans instead of actual data. Useful for environments where you want the AI to help with query writing without accessing the data.
+
+### 8. Audit logging
+
+The `--audit-log` flag writes every executed query to an NDJSON file with timestamps, row counts, and execution times. Use this for compliance and monitoring.
+
+See [Audit Logging](/features/audit-logging) for details.
+
+## Recommended Postgres role
+
+For production use, create a dedicated read-only database role:
+
+```sql
+-- Create a read-only role
+CREATE ROLE isthmus_reader LOGIN PASSWORD 'strong-random-password';
+
+-- Grant connect
+GRANT CONNECT ON DATABASE mydb TO isthmus_reader;
+
+-- Grant usage on specific schemas
+GRANT USAGE ON SCHEMA public TO isthmus_reader;
+GRANT USAGE ON SCHEMA analytics TO isthmus_reader;
+
+-- Grant select on all tables in those schemas
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO isthmus_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO isthmus_reader;
+
+-- Ensure future tables are also readable
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON TABLES TO isthmus_reader;
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics
+  GRANT SELECT ON TABLES TO isthmus_reader;
+```
+
+Then use this role in your connection string:
+
+```
+postgres://isthmus_reader:strong-random-password@localhost:5432/mydb
+```
+
+## Security checklist
+
+- [ ] Use a dedicated read-only Postgres role
+- [ ] Set `SCHEMAS` to limit schema discovery
+- [ ] Set `MAX_ROWS` to a reasonable limit for your use case
+- [ ] Set `QUERY_TIMEOUT` appropriate for your database
+- [ ] Enable `--audit-log` in production
+- [ ] Consider `--explain-only` if the AI should not access actual data
+- [ ] Review the audit log periodically

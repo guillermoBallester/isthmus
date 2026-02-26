@@ -1,0 +1,59 @@
+---
+title: "Installation"
+description: "All methods to install the Isthmus binary on your machine."
+---
+
+## Option 1: go install (recommended)
+
+Requires [Go 1.25+](https://go.dev/doc/install).
+
+```bash
+go install github.com/guillermoBallester/isthmus/cmd/isthmus@latest
+```
+
+The binary is placed in `$GOPATH/bin` (usually `~/go/bin`). Make sure this directory is in your `PATH`.
+
+## Option 2: Clone and build
+
+```bash
+git clone https://github.com/guillermoBallester/isthmus.git
+cd isthmus
+make build
+```
+
+The binary is written to `./bin/isthmus`. Move it to a directory in your PATH or reference the full path in your MCP client config.
+
+## Option 3: Install script
+
+```bash
+curl -fsSL https://isthmus.dev/install.sh | sh
+```
+
+The script detects your OS and architecture, installs via `go install` if Go is available, and verifies the binary.
+
+## Option 4: Docker
+
+```bash
+docker build -t isthmus .
+docker run --rm -e DATABASE_URL="postgres://user:pass@host.docker.internal:5432/mydb" isthmus
+```
+
+<Warning>
+  Docker is mainly useful for testing. Most MCP clients expect a local binary they can spawn directly — use one of the other methods for production use.
+</Warning>
+
+## Verify the installation
+
+```bash
+# Check version
+isthmus --version
+
+# Validate config and test database connectivity
+DATABASE_URL="postgres://user:pass@localhost:5432/mydb" isthmus --dry-run
+```
+
+The `--dry-run` flag validates your configuration, connects to the database, pings it, then exits. It is the fastest way to confirm everything is wired up correctly.
+
+<Info>
+  **Prebuilt binaries** — GitHub Releases with prebuilt binaries for macOS, Linux, and Windows are coming soon. For now, all install methods require Go or a local build.
+</Info>

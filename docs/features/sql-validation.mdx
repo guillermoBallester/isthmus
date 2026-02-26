@@ -1,0 +1,69 @@
+---
+title: "SQL Validation"
+description: "How Isthmus validates SQL queries using PostgreSQL's AST parser."
+---
+
+Every SQL query submitted through the `query` and `explain_query` tools is validated before execution. Isthmus uses PostgreSQL's actual parser (via [`pg_query`](https://github.com/pganalyze/pg_query_go)) to parse SQL into an abstract syntax tree (AST) and applies a strict whitelist.
+
+## How it works
+
+1. The SQL string is parsed using PostgreSQL's parser (the same parser that runs inside Postgres itself)
+2. The resulting AST is inspected
+3. Only `SELECT` and `EXPLAIN` statement nodes are allowed
+4. Everything else is rejected before it reaches the database
+
+This is fundamentally different from regex-based or keyword-based filtering. The AST approach handles edge cases like:
+
+- Comments containing write keywords: `SELECT /* DROP TABLE */ 1` — allowed (it's a valid SELECT)
+- String literals containing write keywords: `SELECT 'DELETE FROM users'` — allowed (it's just a string)
+- Actual write operations: `DELETE FROM users` — rejected at the AST level
+- Multi-statement attacks: `SELECT 1; DROP TABLE users` — rejected (multiple statements not allowed)
+
+## What's allowed
+
+| Statement type | Allowed | Notes |
+|---|---|---|
+| `SELECT` | Yes | Including subqueries, CTEs, `WITH` clauses, window functions |
+| `EXPLAIN` | Yes | Both `EXPLAIN` and `EXPLAIN ANALYZE` |
+
+## What's rejected
+
+| Statement type | Error |
+|---|---|
+| `INSERT` | "only SELECT queries are allowed" |
+| `UPDATE` | "only SELECT queries are allowed" |
+| `DELETE` | "only SELECT queries are allowed" |
+| `DROP` | "only SELECT queries are allowed" |
+| `CREATE` | "only SELECT queries are allowed" |
+| `ALTER` | "only SELECT queries are allowed" |
+| `TRUNCATE` | "only SELECT queries are allowed" |
+| `GRANT` / `REVOKE` | "only SELECT queries are allowed" |
+| Multiple statements | "multiple statements are not allowed" |
+| Empty query | "empty query" |
+| Invalid SQL | "failed to parse SQL: ..." |
+
+## Error messages
+
+When validation fails, the AI model receives a clear error:
+
+```
+# Write attempt
+query failed: only SELECT queries are allowed
+
+# Multi-statement
+query failed: multiple statements are not allowed
+
+# Syntax error
+query failed: failed to parse SQL: syntax error at position 42
+```
+
+## Defense in depth
+
+SQL validation is one layer of Isthmus's safety model. Even if a query somehow passed validation, additional layers protect your database:
+
+1. **Read-only transactions** — all queries run inside `SET TRANSACTION READ ONLY`
+2. **Row limits** — results are capped at `MAX_ROWS`
+3. **Query timeout** — queries are cancelled after `QUERY_TIMEOUT`
+4. **Database permissions** — the Postgres user should have minimal privileges
+
+See [Security](/security) for the complete safety model.

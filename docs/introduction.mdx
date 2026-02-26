@@ -1,0 +1,63 @@
+---
+title: "Your database, understood by AI"
+description: "Isthmus is a local MCP server that connects any AI to your PostgreSQL database. Schema discovery, query execution, and table profiling — all running on your machine."
+---
+
+## What is Isthmus?
+
+Isthmus is an open-source [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that gives AI models direct access to your PostgreSQL database. It runs locally as a single binary, connects over stdio, and requires no cloud services.
+
+Point your AI client at Isthmus, and it can discover your schema, understand table relationships, profile data distributions, and execute read-only SQL queries — all with built-in safety guardrails.
+
+## Tools
+
+Isthmus exposes six MCP tools that let AI models explore and query your database:
+
+<CardGroup cols={2}>
+  <Card title="list_schemas" icon="database" href="/tools/list-schemas">
+    Discover available database schemas.
+  </Card>
+  <Card title="list_tables" icon="table" href="/tools/list-tables">
+    List all tables with sizes, row counts, and column counts.
+  </Card>
+  <Card title="describe_table" icon="magnifying-glass" href="/tools/describe-table">
+    Full table structure: columns, types, foreign keys, indexes, and column statistics.
+  </Card>
+  <Card title="profile_table" icon="chart-bar" href="/tools/profile-table">
+    Deep analysis: sample rows, disk usage, index usage, and inferred relationships.
+  </Card>
+  <Card title="query" icon="terminal" href="/tools/query">
+    Execute read-only SQL queries and get results as JSON.
+  </Card>
+  <Card title="explain_query" icon="bolt" href="/tools/explain-query">
+    Show PostgreSQL execution plans with optional ANALYZE.
+  </Card>
+</CardGroup>
+
+## Supported clients
+
+Isthmus works with any MCP client that supports the stdio transport:
+
+- [Claude Desktop](/clients/claude-desktop)
+- [Cursor](/clients/cursor)
+- [Windsurf](/clients/windsurf)
+- [Gemini CLI](/clients/gemini-cli)
+- [VS Code (Cline & Continue)](/clients/vscode)
+
+<Info>
+  **ChatGPT Desktop** does not yet support MCP's stdio transport. When HTTP transport support lands in Isthmus, ChatGPT Desktop will be supported.
+</Info>
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Zero to working in 5 minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    All install methods.
+  </Card>
+  <Card title="Tools Reference" icon="wrench" href="/tools/overview">
+    Full tool documentation.
+  </Card>
+</CardGroup>

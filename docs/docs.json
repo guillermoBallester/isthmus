@@ -1,0 +1,90 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Isthmus",
+  "description": "Connect any AI to your PostgreSQL database. Local MCP server — no cloud required.",
+  "theme": "mint",
+  "colors": {
+    "primary": "#4169E1",
+    "light": "#6B8DE3",
+    "dark": "#2E4BA0"
+  },
+  "topbarLinks": [
+    {
+      "name": "GitHub",
+      "url": "https://github.com/guillermoBallester/isthmus"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "/quickstart"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Client Setup",
+            "pages": [
+              "clients/claude-desktop",
+              "clients/cursor",
+              "clients/windsurf",
+              "clients/gemini-cli",
+              "clients/vscode"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/policy-engine",
+              "features/schema-filtering",
+              "features/audit-logging",
+              "features/sql-validation"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Tools Reference",
+        "groups": [
+          {
+            "group": "MCP Tools",
+            "pages": [
+              "tools/overview",
+              "tools/list-schemas",
+              "tools/list-tables",
+              "tools/describe-table",
+              "tools/profile-table",
+              "tools/query",
+              "tools/explain-query"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "footerSocials": {
+    "github": "https://github.com/guillermoBallester/isthmus"
+  }
+}

@@ -1,0 +1,100 @@
+---
+title: "Claude Desktop"
+description: "Set up Isthmus with Claude Desktop on macOS and Windows."
+---
+
+## Config file location
+
+<Tabs>
+  <Tab title="macOS">
+    ```
+    ~/Library/Application Support/Claude/claude_desktop_config.json
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```
+    %APPDATA%\Claude\claude_desktop_config.json
+    ```
+  </Tab>
+</Tabs>
+
+## Minimal configuration
+
+Add Isthmus to the `mcpServers` object:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+## Full configuration
+
+Include optional settings for schema filtering, policy enrichment, and row limits:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--audit-log", "/tmp/isthmus-audit.ndjson"],
+      "env": {
+        "DATABASE_URL": "postgres://user:password@localhost:5432/mydb",
+        "SCHEMAS": "public,analytics",
+        "POLICY_FILE": "/path/to/policy.yaml",
+        "MAX_ROWS": "500"
+      }
+    }
+  }
+}
+```
+
+## Verify
+
+1. Save the config file
+2. Restart Claude Desktop (Cmd+Q, then reopen)
+3. Look for the MCP tools icon in the chat input area
+4. Ask: **"What tables are in my database?"**
+
+Claude should call `list_schemas` and `list_tables` and return a summary of your database.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Binary not found">
+    Claude Desktop needs `isthmus` in your PATH. Check where it's installed:
+
+    ```bash
+    which isthmus
+    ```
+
+    If it's in `~/go/bin`, you can use the full path in the config:
+
+    ```json
+    "command": "/Users/yourname/go/bin/isthmus"
+    ```
+  </Accordion>
+  <Accordion title="Wrong config file path">
+    On macOS, the config file must be at exactly:
+    ```
+    ~/Library/Application Support/Claude/claude_desktop_config.json
+    ```
+    Create the file if it doesn't exist. Make sure it's valid JSON.
+  </Accordion>
+  <Accordion title="Database unreachable">
+    Test connectivity outside Claude Desktop first:
+
+    ```bash
+    DATABASE_URL="postgres://user:password@localhost:5432/mydb" isthmus --dry-run
+    ```
+
+    If this fails, check your connection string, network, and Postgres status.
+  </Accordion>
+</AccordionGroup>

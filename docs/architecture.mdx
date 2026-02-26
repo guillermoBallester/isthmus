@@ -1,0 +1,113 @@
+---
+title: "Architecture"
+description: "Hexagonal architecture, directory structure, and how to extend Isthmus."
+---
+
+Isthmus follows hexagonal architecture (ports & adapters). The core business logic is decoupled from infrastructure, making it straightforward to add new database backends or change the transport layer.
+
+## Directory structure
+
+```
+cmd/isthmus/               → Binary entrypoint (single binary, stdio MCP)
+internal/
+  core/
+    port/                  → Interfaces: SchemaExplorer, QueryExecutor, SchemaProfiler, QueryAuditor
+    domain/                → SQL validation (QueryValidator, pg_query AST), cardinality classification
+    service/               → Application services: ExplorerService, QueryService, ProfilerService
+  adapter/
+    mcp/                   → MCP server factory + tool definitions
+    postgres/              → PostgreSQL implementation of ports (pgxpool, information_schema, pg_stats)
+  audit/                   → File-based audit logging (NDJSON)
+  config/                  → Environment variable + CLI flag loading
+  policy/                  → Policy engine: YAML loading, context enrichment
+```
+
+Everything is under `internal/` — Go's convention enforces module privacy. There is no `pkg/` directory.
+
+## Ports (interfaces)
+
+The core defines four port interfaces that adapters implement:
+
+```go
+// Schema discovery
+type SchemaExplorer interface {
+    ListSchemas(ctx context.Context) ([]SchemaInfo, error)
+    ListTables(ctx context.Context) ([]TableInfo, error)
+    DescribeTable(ctx context.Context, schema, tableName string) (*TableDetail, error)
+}
+
+// SQL execution
+type QueryExecutor interface {
+    Execute(ctx context.Context, sql string) ([]map[string]any, error)
+}
+
+// Deep table profiling
+type SchemaProfiler interface {
+    ProfileTable(ctx context.Context, schema, tableName string) (*TableProfile, error)
+}
+
+// Audit trail
+type QueryAuditor interface {
+    Record(ctx context.Context, entry AuditEntry)
+    Close() error
+}
+```
+
+## Data flow
+
+1. The MCP client sends a tool call (e.g. `describe_table`) over stdio
+2. The MCP adapter routes it to the appropriate service
+3. The service calls the port interface (e.g. `SchemaExplorer.DescribeTable`)
+4. The Postgres adapter executes SQL against the database
+5. The policy engine enriches the response (if configured)
+6. The result is serialized to JSON and returned over stdio
+
+## Dependency injection
+
+All dependencies are wired at startup in `cmd/isthmus/main.go`. There is no global state, service locator, or runtime reflection:
+
+```go
+// Adapters
+pool     := postgres.NewPool(ctx, cfg.DatabaseURL)
+explorer := postgres.NewExplorer(pool, cfg.Schemas)
+executor := postgres.NewExecutor(pool, cfg.ReadOnly, cfg.MaxRows, cfg.QueryTimeout)
+profiler := postgres.NewProfiler(pool, cfg.Schemas)
+
+// Optional decorators
+if cfg.PolicyFile != "" {
+    pol, _ := policy.LoadFromFile(cfg.PolicyFile)
+    explorer = policy.NewPolicyExplorer(explorer, pol)
+}
+
+// Services
+explorerSvc := service.NewExplorerService(explorer)
+querySvc    := service.NewQueryService(validator, executor, auditor, logger)
+profilerSvc := service.NewProfilerService(profiler)
+
+// Server
+mcpServer := mcp.NewServer(ver, explorerSvc, profilerSvc, querySvc, logger)
+```
+
+## Adding a new database adapter
+
+To add support for a new database (e.g. MySQL):
+
+1. Create `internal/adapter/mysql/`
+2. Implement `port.SchemaExplorer` and `port.QueryExecutor` (and optionally `port.SchemaProfiler`)
+3. Wire the new adapter in `cmd/isthmus/main.go` based on the connection string scheme
+4. Add integration tests using testcontainers
+
+The MCP layer, services, domain validation, and policy engine all work unchanged — they only depend on port interfaces.
+
+## Testing
+
+Isthmus uses **no mocks**. Integration tests use [testcontainers-go](https://golang.testcontainers.org/) to spin up real PostgreSQL containers:
+
+```bash
+go test -race -count=1 ./...                  # All tests (needs Docker)
+go test -short -race -count=1 ./...           # Unit tests only
+go test ./internal/core/domain/...            # Domain tests only
+go test ./internal/adapter/postgres/...       # Postgres adapter tests
+```
+
+Domain tests (SQL validation, cardinality classification) run without Docker. Adapter and E2E tests require Docker for testcontainers.

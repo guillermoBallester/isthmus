@@ -1,0 +1,81 @@
+---
+title: "Audit Logging"
+description: "Track every SQL query executed by the AI with NDJSON audit logs."
+---
+
+Isthmus can log every query executed through the `query` and `explain_query` tools to an append-only NDJSON (newline-delimited JSON) file. This gives you a full audit trail of what the AI asked your database.
+
+## Enabling audit logging
+
+Use the `--audit-log` CLI flag:
+
+```bash
+isthmus --audit-log /var/log/isthmus-audit.ndjson
+```
+
+Or in your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--audit-log", "/tmp/isthmus-audit.ndjson"],
+      "env": {
+        "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+The file is created if it doesn't exist, and appended to if it does.
+
+## NDJSON schema
+
+Each line is a JSON object with these fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `ts` | string | Timestamp in RFC 3339 format (UTC) |
+| `tool` | string | Tool name: `"query"` or `"explain_query"` |
+| `sql` | string | The SQL statement that was executed |
+| `rows_returned` | integer | Number of rows in the result |
+| `duration_ms` | integer | Execution time in milliseconds |
+| `error` | string \| null | Error message if the query failed, `null` on success |
+
+## Example log entries
+
+```json
+{"ts":"2026-02-25T14:30:15Z","tool":"query","sql":"SELECT id, status FROM orders WHERE status = 'paid' LIMIT 10","rows_returned":10,"duration_ms":12,"error":null}
+{"ts":"2026-02-25T14:30:18Z","tool":"explain_query","sql":"EXPLAIN SELECT id, status FROM orders WHERE status = 'paid'","rows_returned":2,"duration_ms":3,"error":null}
+{"ts":"2026-02-25T14:31:02Z","tool":"query","sql":"SELECT count(*) FROM orders GROUP BY status","rows_returned":6,"duration_ms":45,"error":null}
+```
+
+## Analyzing logs with jq
+
+```bash
+# Count queries by tool
+jq -s 'group_by(.tool) | map({tool: .[0].tool, count: length})' audit.ndjson
+
+# Find slow queries (>100ms)
+jq 'select(.duration_ms > 100)' audit.ndjson
+
+# Find failed queries
+jq 'select(.error != null)' audit.ndjson
+
+# Get total query count
+wc -l audit.ndjson
+
+# Show queries from the last hour
+jq --arg since "$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)" 'select(.ts > $since)' audit.ndjson
+
+# Top 10 most common queries
+jq -s 'group_by(.sql) | map({sql: .[0].sql, count: length}) | sort_by(-.count) | .[0:10]' audit.ndjson
+```
+
+## Notes
+
+- Audit logging is best-effort — if a write to the log file fails, the query still completes. This ensures audit I/O never blocks your database queries.
+- Only `query` and `explain_query` tool calls are logged. Schema discovery tools (`list_schemas`, `list_tables`, `describe_table`, `profile_table`) are not logged since they don't execute user-supplied SQL.
+- The log file is opened in append-only mode. Isthmus never truncates or rotates the file — use external log rotation (e.g. `logrotate`) for long-running deployments.
