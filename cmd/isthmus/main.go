@@ -74,6 +74,7 @@ func run() error {
 	// Adapters
 	var explorer port.SchemaExplorer = postgres.NewExplorer(pool, cfg.Schemas)
 	var executor port.QueryExecutor = postgres.NewExecutor(pool, cfg.ReadOnly, cfg.MaxRows, cfg.QueryTimeout)
+	profiler := postgres.NewProfiler(pool, cfg.Schemas)
 
 	// Policy decorator (optional).
 	if cfg.PolicyFile != "" {
@@ -113,10 +114,11 @@ func run() error {
 
 	// Services
 	explorerSvc := service.NewExplorerService(explorer)
+	profilerSvc := service.NewProfilerService(profiler)
 	querySvc := service.NewQueryService(validator, executor, auditor, logger)
 
 	// MCP server with tool handlers.
-	mcpServer := mcp.NewServer(version, explorerSvc, querySvc, logger)
+	mcpServer := mcp.NewServer(version, explorerSvc, profilerSvc, querySvc, logger)
 
 	// Run MCP over stdio (stdin/stdout).
 	stdioServer := mcpserver.NewStdioServer(mcpServer)

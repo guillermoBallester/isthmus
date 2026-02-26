@@ -19,20 +19,37 @@ const (
 	descListSchemas = "List all available database schemas. " +
 		"Call this first to discover what schemas exist before listing tables or describing them."
 
-	descListTables = "List all tables and views in the database with their schemas, types, estimated row counts, and comments. " +
-		"Call this first to discover what tables and views are available before describing or querying them."
+	descListTables = "List all tables and views with schema, type, estimated row count, total size, column count, " +
+		"and whether indexes exist. Use this to understand the database landscape — " +
+		"table sizes tell you which tables are large (avoid SELECT * on them) and " +
+		"row estimates help you plan queries with appropriate LIMIT clauses."
 
-	descDescribeTable = "Describe a table's structure including columns (name, type, nullable, default, comment), " +
-		"primary keys, foreign keys with referenced tables, and indexes. " +
-		"Use this to understand a table's schema before writing queries. " +
-		"Pay attention to foreign keys — they tell you how tables relate to each other for JOINs."
+	descDescribeTable = "Describe a table's full structure including: columns with types, nullability, defaults, and comments; " +
+		"column-level statistics from pg_stats (cardinality classification, null rates, enum-like values with frequencies, " +
+		"value ranges for dates/numbers); primary keys; foreign keys with referenced tables; indexes; " +
+		"check constraints; row estimate; table size; and statistics freshness. " +
+		"Use this to understand a table before writing queries. " +
+		"Pay attention to: foreign keys for JOIN paths; cardinality to know what to GROUP BY vs filter; " +
+		"enum-like columns show the allowed values; value ranges show date spans and numeric scales; " +
+		"null rates help you handle NULLs correctly in filters and JOINs."
 
 	descDescribeTableParam = "Name of the table to describe"
+
+	descProfileTable = "Deep-profile a single table: sample rows, disk size breakdown (table/indexes/TOAST), " +
+		"index usage statistics (which indexes are actually used vs unused), " +
+		"inferred foreign key relationships (detected from naming patterns like *_id), " +
+		"and statistics freshness warnings. " +
+		"Use this when you need deeper analysis than describe_table provides — " +
+		"for example, to see actual data patterns in sample rows, find unused indexes, " +
+		"or discover implicit relationships in databases without explicit foreign keys."
+
+	descProfileTableParam = "Name of the table to profile"
 
 	descQuery = "Execute a read-only SQL query against the database and return results as a JSON array of objects. " +
 		"A server-side row limit and query timeout are enforced. " +
 		"Always use specific column names instead of SELECT *. " +
-		"Use JOINs based on foreign keys discovered via describe_table."
+		"Use JOINs based on foreign keys discovered via describe_table. " +
+		"Check column cardinality from describe_table to write efficient WHERE and GROUP BY clauses."
 
 	descQueryParam = "SQL query to execute (SELECT statements only)"
 
@@ -44,7 +61,7 @@ const (
 	descExplainQuerySQL = "The SELECT query to explain (without the EXPLAIN keyword)"
 )
 
-func RegisterTools(s *server.MCPServer, explorer *service.ExplorerService, query *service.QueryService) {
+func RegisterTools(s *server.MCPServer, explorer *service.ExplorerService, profiler *service.ProfilerService, query *service.QueryService) {
 	s.AddTool(
 		mcp.NewTool("list_schemas",
 			mcp.WithDescription(descListSchemas),
@@ -72,6 +89,22 @@ func RegisterTools(s *server.MCPServer, explorer *service.ExplorerService, query
 		),
 		describeTableHandler(explorer),
 	)
+
+	if profiler != nil {
+		s.AddTool(
+			mcp.NewTool("profile_table",
+				mcp.WithDescription(descProfileTable),
+				mcp.WithString("table_name",
+					mcp.Required(),
+					mcp.Description(descProfileTableParam),
+				),
+				mcp.WithString("schema",
+					mcp.Description("Schema name (optional, resolves automatically if omitted)"),
+				),
+			),
+			profileTableHandler(profiler),
+		)
+	}
 
 	s.AddTool(
 		mcp.NewTool("query",
@@ -146,6 +179,29 @@ func describeTableHandler(explorer *service.ExplorerService) server.ToolHandlerF
 		}
 
 		data, err := json.Marshal(detail)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func profileTableHandler(profiler *service.ProfilerService) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		tableName, ok := request.GetArguments()["table_name"].(string)
+		if !ok || tableName == "" {
+			return mcp.NewToolResultError("table_name is required"), nil
+		}
+
+		schema, _ := request.GetArguments()["schema"].(string)
+
+		profile, err := profiler.ProfileTable(ctx, schema, tableName)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to profile table: %v", err)), nil
+		}
+
+		data, err := json.Marshal(profile)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
 		}

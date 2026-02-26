@@ -8,6 +8,7 @@ const queryListSchemas = `
 	ORDER BY s.schema_name`
 
 // queryListTables has one %s placeholder for the schema filter clause.
+// Returns enhanced info: total_bytes, column_count, has_indexes.
 const queryListTables = `
 	SELECT
 		t.table_schema,
@@ -18,6 +19,25 @@ const queryListTables = `
 			ELSE lower(t.table_type)
 		END AS type,
 		COALESCE(s.n_live_tup, 0) AS row_estimate,
+		CASE WHEN t.table_type = 'BASE TABLE' THEN
+			COALESCE(pg_total_relation_size(
+				(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass
+			), 0)
+		ELSE 0
+		END AS total_bytes,
+		CASE WHEN t.table_type = 'BASE TABLE' THEN
+			pg_size_pretty(COALESCE(pg_total_relation_size(
+				(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass
+			), 0))
+		ELSE '0 bytes'
+		END AS size_human,
+		(SELECT count(*)::int FROM information_schema.columns c
+		 WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name
+		) AS column_count,
+		EXISTS(
+			SELECT 1 FROM pg_indexes pgi
+			WHERE pgi.schemaname = t.table_schema AND pgi.tablename = t.table_name
+		) AS has_indexes,
 		COALESCE(pg_catalog.obj_description(
 			(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass, 'pg_class'
 		), '') AS comment
@@ -92,3 +112,80 @@ const queryIndexes = `
 	JOIN pg_class c ON c.relname = pgi.indexname
 	JOIN pg_index i ON i.indexrelid = c.oid
 	WHERE pgi.schemaname = $1 AND pgi.tablename = $2`
+
+// --- Schema Profiler queries ---
+
+// queryColumnStats fetches pg_stats data for all columns in a table.
+// $1 = schema, $2 = table_name.
+const queryColumnStats = `
+	SELECT
+		s.attname,
+		s.null_frac,
+		s.n_distinct,
+		s.most_common_vals::text,
+		s.most_common_freqs::text,
+		s.histogram_bounds::text
+	FROM pg_stats s
+	WHERE s.schemaname = $1 AND s.tablename = $2
+	ORDER BY s.attname`
+
+// queryCheckConstraints fetches CHECK constraints for a table.
+// $1 = schema, $2 = table_name.
+const queryCheckConstraints = `
+	SELECT
+		c.conname,
+		pg_get_constraintdef(c.oid)
+	FROM pg_constraint c
+	JOIN pg_class r ON r.oid = c.conrelid
+	JOIN pg_namespace n ON n.oid = r.relnamespace
+	WHERE n.nspname = $1 AND r.relname = $2 AND c.contype = 'c'
+	ORDER BY c.conname`
+
+// queryTableSize fetches row estimate, total relation size, and human-readable size.
+// $1 = schema, $2 = table_name.
+const queryTableSize = `
+	SELECT
+		COALESCE(c.reltuples::bigint, 0),
+		COALESCE(pg_total_relation_size(c.oid), 0),
+		pg_size_pretty(COALESCE(pg_total_relation_size(c.oid), 0))
+	FROM pg_class c
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	WHERE n.nspname = $1 AND c.relname = $2`
+
+// queryStatsAge fetches the timestamp of the last ANALYZE for a table.
+// $1 = schema, $2 = table_name.
+const queryStatsAge = `
+	SELECT COALESCE(last_autoanalyze, last_analyze)
+	FROM pg_stat_user_tables
+	WHERE schemaname = $1 AND relname = $2`
+
+// --- Profile table queries (deep analysis) ---
+
+// queryTableSizeBreakdown fetches disk size breakdown: table, indexes, TOAST.
+// $1 = schema, $2 = table_name.
+const queryTableSizeBreakdown = `
+	SELECT
+		COALESCE(c.reltuples::bigint, 0) AS row_estimate,
+		COALESCE(pg_total_relation_size(c.oid), 0) AS total_bytes,
+		COALESCE(pg_relation_size(c.oid), 0) AS table_bytes,
+		COALESCE(pg_indexes_size(c.oid), 0) AS index_bytes,
+		COALESCE(pg_total_relation_size(c.reltoastrelid), 0) AS toast_bytes,
+		pg_size_pretty(COALESCE(pg_total_relation_size(c.oid), 0)) AS size_human
+	FROM pg_class c
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	WHERE n.nspname = $1 AND c.relname = $2`
+
+// queryIndexUsage fetches usage statistics for all indexes on a table.
+// $1 = schema, $2 = table_name.
+const queryIndexUsage = `
+	SELECT
+		s.indexrelname AS index_name,
+		COALESCE(s.idx_scan, 0) AS scans,
+		COALESCE(pg_relation_size(s.indexrelid), 0) AS size_bytes,
+		pg_size_pretty(COALESCE(pg_relation_size(s.indexrelid), 0)) AS size_human
+	FROM pg_stat_user_indexes s
+	WHERE s.schemaname = $1 AND s.relname = $2
+	ORDER BY s.indexrelname`
+
+// Note: sample rows and FK inference queries are built dynamically in the profiler
+// because they require table name interpolation or complex schema filtering.

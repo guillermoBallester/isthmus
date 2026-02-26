@@ -8,14 +8,14 @@ import (
 )
 
 // NewServer creates an MCPServer with tools and logging hooks.
-func NewServer(version string, explorer *service.ExplorerService, query *service.QueryService, logger *slog.Logger) *server.MCPServer {
+func NewServer(version string, explorer *service.ExplorerService, profiler *service.ProfilerService, query *service.QueryService, logger *slog.Logger) *server.MCPServer {
 	s := server.NewMCPServer(
 		serverName,
 		version,
 		server.WithHooks(ToolCallHooks(logger)),
 	)
 
-	RegisterTools(s, explorer, query)
+	RegisterTools(s, explorer, profiler, query)
 
 	return s
 }

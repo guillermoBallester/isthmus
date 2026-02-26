@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 )
@@ -113,4 +115,192 @@ func (e *Explorer) fetchIndexes(ctx context.Context, schema, tableName string) (
 		idxs = append(idxs, idx)
 	}
 	return idxs, rows.Err()
+}
+
+// fetchColumnStats reads pg_stats for all columns in a table and enriches the
+// column list with cardinality classification, null fraction, common values, and ranges.
+func (e *Explorer) fetchColumnStats(ctx context.Context, schema, tableName string, columns []port.ColumnInfo, rowEstimate int64) error {
+	rows, err := e.pool.Query(ctx, queryColumnStats, schema, tableName)
+	if err != nil {
+		return fmt.Errorf("querying column stats: %w", err)
+	}
+	defer rows.Close()
+
+	statsMap := make(map[string]*port.ColumnStats)
+	for rows.Next() {
+		var (
+			attname      string
+			nullFrac     float64
+			nDistinct    float64
+			mcvRaw       *string
+			mcfRaw       *string
+			histogramRaw *string
+		)
+		if err := rows.Scan(&attname, &nullFrac, &nDistinct, &mcvRaw, &mcfRaw, &histogramRaw); err != nil {
+			return fmt.Errorf("scanning column stats: %w", err)
+		}
+
+		stats := &port.ColumnStats{
+			NullFraction: nullFrac,
+			NDistinct:    nDistinct,
+			Cardinality:  classifyCardinality(nDistinct, rowEstimate),
+		}
+
+		// Parse most common values for enum-like columns.
+		if stats.Cardinality == port.CardinalityEnumLike && mcvRaw != nil {
+			stats.MostCommonVals = parsePgArray(*mcvRaw)
+			if mcfRaw != nil {
+				stats.MostCommonFreqs = parsePgFloatArray(*mcfRaw)
+			}
+		}
+
+		// Parse histogram bounds for min/max range.
+		if histogramRaw != nil {
+			bounds := parsePgArray(*histogramRaw)
+			if len(bounds) >= 2 {
+				stats.MinValue = bounds[0]
+				stats.MaxValue = bounds[len(bounds)-1]
+			}
+		}
+
+		statsMap[attname] = stats
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating column stats: %w", err)
+	}
+
+	for i := range columns {
+		if s, ok := statsMap[columns[i].Name]; ok {
+			columns[i].Stats = s
+		}
+	}
+	return nil
+}
+
+// fetchCheckConstraints reads CHECK constraints for a table.
+func (e *Explorer) fetchCheckConstraints(ctx context.Context, schema, tableName string) ([]port.CheckConstraint, error) {
+	rows, err := e.pool.Query(ctx, queryCheckConstraints, schema, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("querying check constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var checks []port.CheckConstraint
+	for rows.Next() {
+		var ck port.CheckConstraint
+		if err := rows.Scan(&ck.Name, &ck.Expression); err != nil {
+			return nil, fmt.Errorf("scanning check constraint: %w", err)
+		}
+		checks = append(checks, ck)
+	}
+	return checks, rows.Err()
+}
+
+// fetchTableSize reads row estimate, total size in bytes, and human-readable size from pg_class.
+func (e *Explorer) fetchTableSize(ctx context.Context, schema, tableName string) (rowEstimate, totalBytes int64, sizeHuman string, err error) {
+	err = e.pool.QueryRow(ctx, queryTableSize, schema, tableName).
+		Scan(&rowEstimate, &totalBytes, &sizeHuman)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("querying table size: %w", err)
+	}
+	return rowEstimate, totalBytes, sizeHuman, nil
+}
+
+// fetchStatsAge reads the last ANALYZE timestamp for a table.
+func (e *Explorer) fetchStatsAge(ctx context.Context, schema, tableName string) (*time.Time, error) {
+	var ts *time.Time
+	err := e.pool.QueryRow(ctx, queryStatsAge, schema, tableName).Scan(&ts)
+	if err != nil {
+		// No stats is not an error — could be a fresh table.
+		return nil, nil //nolint:nilerr
+	}
+	return ts, nil
+}
+
+// classifyCardinality determines the cardinality class based on pg_stats n_distinct.
+// n_distinct semantics:
+//   - -1.0 = all values unique
+//   - negative = fraction of rows that are distinct (e.g., -0.5 = 50% unique)
+//   - positive = estimated number of distinct values
+func classifyCardinality(nDistinct float64, rowEstimate int64) port.CardinalityClass {
+	if nDistinct == -1 {
+		return port.CardinalityUnique
+	}
+
+	if nDistinct < 0 {
+		ratio := -nDistinct
+		if ratio >= 0.9 {
+			return port.CardinalityNearUnique
+		}
+		// Convert to estimated distinct count.
+		nDistinct = ratio * float64(rowEstimate)
+	}
+
+	if nDistinct <= 20 {
+		return port.CardinalityEnumLike
+	}
+	if nDistinct <= 200 {
+		return port.CardinalityLowCardinality
+	}
+	return port.CardinalityHighCardinality
+}
+
+// parsePgArray parses a PostgreSQL text array representation like {val1,val2,val3}.
+// Handles basic quoting but not all edge cases (sufficient for display purposes).
+func parsePgArray(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" {
+		return nil
+	}
+	// Strip outer braces.
+	raw = strings.TrimPrefix(raw, "{")
+	raw = strings.TrimSuffix(raw, "}")
+
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	escaped := false
+
+	for _, ch := range raw {
+		if escaped {
+			current.WriteRune(ch)
+			escaped = false
+			continue
+		}
+		switch {
+		case ch == '\\':
+			escaped = true
+		case ch == '"':
+			inQuote = !inQuote
+		case ch == ',' && !inQuote:
+			val := strings.TrimSpace(current.String())
+			if val != "NULL" {
+				result = append(result, val)
+			}
+			current.Reset()
+		default:
+			current.WriteRune(ch)
+		}
+	}
+	// Flush last value.
+	if current.Len() > 0 {
+		val := strings.TrimSpace(current.String())
+		if val != "NULL" {
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// parsePgFloatArray parses a PostgreSQL float array like {0.5,0.3,0.2}.
+func parsePgFloatArray(raw string) []float64 {
+	vals := parsePgArray(raw)
+	result := make([]float64, 0, len(vals))
+	for _, v := range vals {
+		var f float64
+		if _, err := fmt.Sscanf(v, "%f", &f); err == nil {
+			result = append(result, f)
+		}
+	}
+	return result
 }
