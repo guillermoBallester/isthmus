@@ -11,13 +11,13 @@ import (
 	"syscall"
 
 	"github.com/guillermoBallester/isthmus/internal/adapter/mcp"
+	"github.com/guillermoBallester/isthmus/internal/adapter/policy"
 	"github.com/guillermoBallester/isthmus/internal/adapter/postgres"
 	"github.com/guillermoBallester/isthmus/internal/audit"
 	"github.com/guillermoBallester/isthmus/internal/config"
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
-	"github.com/guillermoBallester/isthmus/internal/policy"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
@@ -145,12 +145,9 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 
 func serve(ctx context.Context, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, auditor port.QueryAuditor, logger *slog.Logger) error {
 	validator := domain.NewPgQueryValidator()
-
-	explorerSvc := service.NewExplorerService(explorer)
-	profilerSvc := service.NewProfilerService(profiler)
 	querySvc := service.NewQueryService(validator, executor, auditor, logger)
 
-	mcpServer := mcp.NewServer(ver, explorerSvc, profilerSvc, querySvc, logger)
+	mcpServer := mcp.NewServer(ver, explorer, profiler, querySvc, logger)
 	stdioServer := mcpserver.NewStdioServer(mcpServer)
 
 	logger.Info("serving MCP over stdio")
