@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -114,9 +115,20 @@ func (p *Profiler) resolveSchema(ctx context.Context, tableName string) (string,
 }
 
 func (p *Profiler) fetchSizeBreakdown(ctx context.Context, schema, tableName string, profile *port.TableProfile) error {
-	return p.pool.QueryRow(ctx, queryTableSizeBreakdown, schema, tableName).
+	var toastBytes int64
+	err := p.pool.QueryRow(ctx, queryTableSizeBreakdown, schema, tableName).
 		Scan(&profile.RowEstimate, &profile.TotalBytes, &profile.TableBytes,
-			&profile.IndexBytes, &profile.ToastBytes, &profile.SizeHuman)
+			&profile.IndexBytes, &toastBytes, &profile.SizeHuman)
+	if err != nil {
+		return err
+	}
+	if toastBytes > 0 {
+		if profile.Extra == nil {
+			profile.Extra = make(map[string]any)
+		}
+		profile.Extra["toast_bytes"] = toastBytes
+	}
+	return nil
 }
 
 func (p *Profiler) fetchSampleRows(ctx context.Context, schema, tableName string) ([]map[string]any, error) {
@@ -201,6 +213,12 @@ func (p *Profiler) inferForeignKeys(ctx context.Context, schema, tableName strin
 		return nil, err
 	}
 
+	// Build table name set for the domain matching function.
+	tableNames := make(map[string]bool, len(pkIndex))
+	for tbl := range pkIndex {
+		tableNames[tbl] = true
+	}
+
 	var inferred []port.InferredFK
 	for _, col := range targetCols {
 		// Skip columns that already have explicit FKs.
@@ -208,33 +226,25 @@ func (p *Profiler) inferForeignKeys(ctx context.Context, schema, tableName strin
 			continue
 		}
 
-		// Pattern: *_id → look for table named * with primary key "id".
-		if !strings.HasSuffix(col.name, "_id") {
+		// Use domain naming pattern match, then verify type compatibility (adapter-specific).
+		candidate, ok := domain.MatchFKNamingPattern(col.name, tableNames)
+		if !ok {
 			continue
 		}
-		prefix := strings.TrimSuffix(col.name, "_id")
 
-		// Try plural and singular forms of the table name.
-		candidates := []string{prefix + "s", prefix, prefix + "es"}
-		for _, candidate := range candidates {
-			if pk, ok := pkIndex[candidate]; ok {
-				// Check type compatibility (both should be integer-family).
-				if isTypeCompatible(col.dataType, pk.dataType) {
-					confidence := "high"
-					reason := fmt.Sprintf("column %q matches naming pattern %q.%q", col.name, candidate, pk.colName)
-					if candidate != prefix+"s" && candidate != prefix {
-						confidence = "medium"
-					}
-					inferred = append(inferred, port.InferredFK{
-						ColumnName:       col.name,
-						ReferencedTable:  candidate,
-						ReferencedColumn: pk.colName,
-						Confidence:       confidence,
-						Reason:           reason,
-					})
-					break // Take the first match.
-				}
-			}
+		pk, pkOK := pkIndex[candidate.ReferencedTable]
+		if !pkOK {
+			continue
+		}
+
+		if isTypeCompatible(col.dataType, pk.dataType) {
+			inferred = append(inferred, port.InferredFK{
+				ColumnName:       candidate.ColumnName,
+				ReferencedTable:  candidate.ReferencedTable,
+				ReferencedColumn: pk.colName,
+				Confidence:       candidate.Confidence,
+				Reason:           candidate.Reason,
+			})
 		}
 	}
 	return inferred, nil

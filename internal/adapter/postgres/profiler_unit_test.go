@@ -3,35 +3,30 @@ package postgres
 import (
 	"testing"
 
-	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestClassifyCardinality(t *testing.T) {
+func TestPgDistinctToAbsolute(t *testing.T) {
 	tests := []struct {
 		name        string
 		nDistinct   float64
 		rowEstimate int64
-		want        port.CardinalityClass
+		want        int64
 	}{
-		{"all unique (-1)", -1, 1000, port.CardinalityUnique},
-		{"near unique (-0.95)", -0.95, 1000, port.CardinalityNearUnique},
-		{"near unique threshold (-0.9)", -0.9, 1000, port.CardinalityNearUnique},
-		{"high cardinality (-0.5)", -0.5, 1000, port.CardinalityHighCardinality},
-		{"enum-like (5 distinct)", 5, 1000, port.CardinalityEnumLike},
-		{"enum-like (20 distinct)", 20, 1000, port.CardinalityEnumLike},
-		{"low cardinality (50 distinct)", 50, 1000, port.CardinalityLowCardinality},
-		{"low cardinality (200 distinct)", 200, 1000, port.CardinalityLowCardinality},
-		{"high cardinality (500 distinct)", 500, 1000, port.CardinalityHighCardinality},
-		{"enum-like from ratio (-0.005 with 1000 rows = 5 distinct)", -0.005, 1000, port.CardinalityEnumLike},
-		{"low cardinality from ratio (-0.1 with 1000 rows = 100 distinct)", -0.1, 1000, port.CardinalityLowCardinality},
-		{"zero distinct", 0, 1000, port.CardinalityEnumLike},
-		{"one distinct", 1, 1000, port.CardinalityEnumLike},
+		{"all unique (-1)", -1, 1000, 1000},
+		{"fraction (-0.5)", -0.5, 1000, 500},
+		{"fraction (-0.95)", -0.95, 1000, 950},
+		{"fraction (-0.005)", -0.005, 1000, 5},
+		{"positive integer", 42, 1000, 42},
+		{"positive float rounds", 42.6, 1000, 43},
+		{"zero", 0, 1000, 0},
+		{"one", 1, 1000, 1},
+		{"zero rows unique", -1, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyCardinality(tt.nDistinct, tt.rowEstimate)
+			got := pgDistinctToAbsolute(tt.nDistinct, tt.rowEstimate)
 			assert.Equal(t, tt.want, got)
 		})
 	}

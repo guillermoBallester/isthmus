@@ -189,9 +189,9 @@ func TestDescribeTable_HappyPath(t *testing.T) {
 			Columns: []port.ColumnInfo{
 				{Name: "id", DataType: "uuid", IsPrimaryKey: true},
 				{Name: "email", DataType: "text", Stats: &port.ColumnStats{
-					Cardinality:  port.CardinalityUnique,
-					NullFraction: 0.01,
-					NDistinct:    -1,
+					Cardinality:   domain.CardinalityUnique,
+					NullFraction:  0.01,
+					DistinctCount: 1000,
 				}},
 			},
 		},
@@ -207,7 +207,7 @@ func TestDescribeTable_HappyPath(t *testing.T) {
 	assert.Len(t, detail.Columns, 2)
 	assert.Equal(t, int64(1000), detail.RowEstimate)
 	assert.NotNil(t, detail.Columns[1].Stats)
-	assert.Equal(t, port.CardinalityUnique, detail.Columns[1].Stats.Cardinality)
+	assert.Equal(t, domain.CardinalityUnique, detail.Columns[1].Stats.Cardinality)
 }
 
 func TestDescribeTable_MissingTableName(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/adapter/postgres"
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -142,7 +143,7 @@ func TestDescribeTable_ColumnStats(t *testing.T) {
 
 	require.NotNil(t, statusCol, "status column not found")
 	require.NotNil(t, statusCol.Stats, "status column should have stats")
-	assert.Equal(t, port.CardinalityEnumLike, statusCol.Stats.Cardinality)
+	assert.Equal(t, domain.CardinalityEnumLike, statusCol.Stats.Cardinality)
 	assert.NotEmpty(t, statusCol.Stats.MostCommonVals, "enum-like column should have most common values")
 	// Should contain the three status values.
 	assert.Contains(t, statusCol.Stats.MostCommonVals, "active")
