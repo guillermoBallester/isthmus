@@ -187,5 +187,43 @@ const queryIndexUsage = `
 	WHERE s.schemaname = $1 AND s.relname = $2
 	ORDER BY s.indexrelname`
 
-// Note: sample rows and FK inference queries are built dynamically in the profiler
-// because they require table name interpolation or complex schema filtering.
+// --- Profiler FK inference queries (dynamically filtered) ---
+
+// queryResolveSchema resolves the schema for a table by name.
+// $1 = table_name; schema filter placeholder at %s starts at $2.
+const queryResolveSchema = `
+	SELECT n.nspname
+	FROM pg_class c
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	WHERE c.relname = $1 AND c.relkind IN ('r', 'p') AND %s
+	LIMIT 1`
+
+// queryProfilerColumns fetches column names and types for a table.
+// $1 = schema, $2 = table_name.
+const queryProfilerColumns = `
+	SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod)
+	FROM pg_attribute a
+	JOIN pg_class c ON c.oid = a.attrelid
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+	ORDER BY a.attnum`
+
+// queryExplicitFKColumns fetches column names that have explicit FK constraints.
+// $1 = schema, $2 = table_name.
+const queryExplicitFKColumns = `
+	SELECT kcu.column_name
+	FROM information_schema.table_constraints tc
+	JOIN information_schema.key_column_usage kcu
+		ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+	WHERE tc.constraint_type = 'FOREIGN KEY'
+		AND tc.table_schema = $1 AND tc.table_name = $2`
+
+// queryPKIndex fetches all primary key columns across schemas for FK inference.
+// Schema filter placeholder at %s starts at $1.
+const queryPKIndex = `
+	SELECT c.relname, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod)
+	FROM pg_index i
+	JOIN pg_class c ON c.oid = i.indrelid
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+	WHERE i.indisprimary AND %s`

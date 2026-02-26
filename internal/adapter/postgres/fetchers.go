@@ -21,7 +21,7 @@ func (e *Explorer) fetchTableComment(ctx context.Context, schema, tableName stri
 }
 
 func (e *Explorer) fetchTableMeta(ctx context.Context, tableName string) (schema, comment string, err error) {
-	filter, filterArgs := e.schemaFilter("t.table_schema", 2) // $1 is tableName
+	filter, filterArgs := schemaFilter(e.schemas, "t.table_schema", 2) // $1 is tableName
 	query := fmt.Sprintf(queryTableMeta, filter)
 
 	args := make([]any, 0, 1+len(filterArgs))
