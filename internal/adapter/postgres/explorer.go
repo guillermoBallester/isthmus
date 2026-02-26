@@ -67,7 +67,11 @@ func (e *Explorer) ListTables(ctx context.Context) ([]port.TableInfo, error) {
 	var tables []port.TableInfo
 	for rows.Next() {
 		var t port.TableInfo
-		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.RowEstimate, &t.Comment); err != nil {
+		if err := rows.Scan(
+			&t.Schema, &t.Name, &t.Type, &t.RowEstimate,
+			&t.TotalBytes, &t.SizeHuman, &t.ColumnCount, &t.HasIndexes,
+			&t.Comment,
+		); err != nil {
 			return nil, fmt.Errorf("scanning table row: %w", err)
 		}
 		tables = append(tables, t)
@@ -89,6 +93,15 @@ func (e *Explorer) DescribeTable(ctx context.Context, schema, tableName string) 
 		return nil, err
 	}
 
+	// Fetch table size and row estimate from pg_class.
+	detail.RowEstimate, detail.TotalBytes, detail.SizeHuman, err = e.fetchTableSize(ctx, detail.Schema, tableName)
+	if err != nil {
+		// Non-fatal: views and some system objects may not have size info.
+		detail.RowEstimate = 0
+		detail.TotalBytes = 0
+		detail.SizeHuman = ""
+	}
+
 	detail.Columns, err = e.fetchColumns(ctx, detail.Schema, tableName)
 	if err != nil {
 		return nil, err
@@ -96,6 +109,13 @@ func (e *Explorer) DescribeTable(ctx context.Context, schema, tableName string) 
 
 	if err := e.markPrimaryKeys(ctx, detail); err != nil {
 		return nil, err
+	}
+
+	// Enrich columns with pg_stats profiling data.
+	if err := e.fetchColumnStats(ctx, detail.Schema, tableName, detail.Columns, detail.RowEstimate); err != nil {
+		// Non-fatal: stats may not be available (e.g., never analyzed).
+		// Columns are still returned without stats.
+		_ = err
 	}
 
 	detail.ForeignKeys, err = e.fetchForeignKeys(ctx, detail.Schema, tableName)
@@ -106,6 +126,18 @@ func (e *Explorer) DescribeTable(ctx context.Context, schema, tableName string) 
 	detail.Indexes, err = e.fetchIndexes(ctx, detail.Schema, tableName)
 	if err != nil {
 		return nil, err
+	}
+
+	detail.CheckConstraints, err = e.fetchCheckConstraints(ctx, detail.Schema, tableName)
+	if err != nil {
+		// Non-fatal: check constraints are enrichment, not essential.
+		_ = err
+	}
+
+	// Fetch stats freshness.
+	detail.StatsAge, err = e.fetchStatsAge(ctx, detail.Schema, tableName)
+	if err != nil {
+		_ = err
 	}
 
 	return detail, nil
