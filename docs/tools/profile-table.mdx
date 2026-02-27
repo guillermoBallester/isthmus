@@ -113,6 +113,18 @@ Use this when you need deeper analysis than `describe_table` provides — for ex
 }
 ```
 
+## Column masking
+
+If a [policy file](/features/policy-engine) defines column masks, sample rows are automatically masked using the same rules as `query` results. For example, with `email: redact` and `phone: partial`:
+
+```json
+"sample_rows": [
+  {"id": 1, "email": "***", "phone": "***********5309", "name": "Alice"}
+]
+```
+
+This ensures profiling never leaks PII. See [Column Masking](/features/column-masking) for details.
+
 ## Notes
 
 - Sample rows are fetched with `LIMIT 5` using a `TABLESAMPLE` clause when available for performance.

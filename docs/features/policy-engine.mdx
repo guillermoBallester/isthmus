@@ -110,11 +110,31 @@ This tells the AI model that `amount_cents` is in cents and in USD — so it kno
 - **Clarify ambiguous names** — "created_at: Account creation timestamp (UTC)" vs. just "timestamp"
 - **Think like an AI** — what would you need to know to write correct SQL against this table?
 
+## Column masking
+
+The policy file also supports per-column masking to protect PII and sensitive data. Add a `mask` directive to any column:
+
+```yaml
+context:
+  tables:
+    public.customers:
+      columns:
+        email:
+          description: "Primary email address"
+          mask: "redact"
+```
+
+Four mask types are available: `redact`, `hash`, `partial`, and `null`. Masking is applied to both `query` results and `profile_table` sample rows.
+
+See [Column Masking](/features/column-masking) for the full reference — mask types, examples, conflict detection, and best practices.
+
 ## Validation
 
 The policy file is validated at startup. Isthmus will reject files with:
 
 - Empty table keys
 - Empty column keys within a table
+- Invalid mask values (allowed: `redact`, `hash`, `partial`, `null`)
+- Conflicting masks for the same column name across different tables
 
 If the policy file is invalid, Isthmus exits with an error before starting the MCP server.

@@ -5,7 +5,7 @@ description: "Isthmus is a local MCP server that connects any AI to your Postgre
 
 ## What is Isthmus?
 
-Isthmus is an open-source [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that gives AI models direct access to your PostgreSQL database. It runs locally as a single binary, connects over stdio, and requires no cloud services.
+Isthmus is an open-source [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that gives AI models direct access to your PostgreSQL database. It runs locally as a single binary, supports both stdio and [HTTP transports](/features/http-transport), and requires no cloud services.
 
 Point your AI client at Isthmus, and it can discover your schema, understand table relationships, profile data distributions, and execute read-only SQL queries — all with built-in safety guardrails.
 
@@ -36,17 +36,14 @@ Isthmus exposes six MCP tools that let AI models explore and query your database
 
 ## Supported clients
 
-Isthmus works with any MCP client that supports the stdio transport:
+Isthmus works with any MCP client. Most clients use the default stdio transport; clients that require HTTP can use the [HTTP transport](/features/http-transport).
 
-- [Claude Desktop](/clients/claude-desktop)
-- [Cursor](/clients/cursor)
-- [Windsurf](/clients/windsurf)
-- [Gemini CLI](/clients/gemini-cli)
-- [VS Code (Cline & Continue)](/clients/vscode)
-
-<Info>
-  **ChatGPT Desktop** does not yet support MCP's stdio transport. When HTTP transport support lands in Isthmus, ChatGPT Desktop will be supported.
-</Info>
+- [Claude Desktop](/clients/claude-desktop) — stdio
+- [Cursor](/clients/cursor) — stdio
+- [Windsurf](/clients/windsurf) — stdio
+- [Gemini CLI](/clients/gemini-cli) — stdio
+- [VS Code (Cline & Continue)](/clients/vscode) — stdio
+- **ChatGPT Desktop** — HTTP (`--transport http`)
 
 ## Next steps
 

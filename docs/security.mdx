@@ -5,9 +5,11 @@ description: "Isthmus's safety model: how it protects your database from uninten
 
 Isthmus is designed to be safe to point at production databases. Multiple independent layers ensure the AI can only read data, and only the data you allow.
 
-## Local-only architecture
+## Local-first architecture
 
-Isthmus runs entirely on your machine. It communicates with your AI client over stdio (standard input/output) — no network ports are opened, no data leaves your machine, and no cloud service is involved.
+Isthmus runs entirely on your machine. By default, it communicates with your AI client over stdio (standard input/output) — no network ports are opened, no data leaves your machine, and no cloud service is involved.
+
+When using the [HTTP transport](/features/http-transport), Isthmus opens a network port. Bind to `127.0.0.1` to restrict access to your machine, or use a reverse proxy for TLS and authentication if remote access is needed.
 
 ## Defense in depth
 
@@ -35,21 +37,33 @@ The `SCHEMAS` environment variable restricts which schemas the AI can discover. 
 
 See [Schema Filtering](/features/schema-filtering) for details.
 
-### 6. Policy engine
+### 6. Column masking
+
+The policy file supports per-column masking rules (`redact`, `hash`, `partial`, `null`) that protect PII in both `query` results and `profile_table` sample rows. Masking is enforced server-side — the AI cannot bypass it regardless of what SQL it generates.
+
+See [Column Masking](/features/column-masking) for details.
+
+### 7. Policy engine
 
 The policy file enriches responses with business context but also acts as a documentation layer — operators can describe exactly what data means, reducing the chance of AI misinterpretation.
 
 See [Policy Engine](/features/policy-engine) for details.
 
-### 7. Explain-only mode
+### 8. Explain-only mode
 
 The `--explain-only` flag forces all `query` calls to return `EXPLAIN` plans instead of actual data. Useful for environments where you want the AI to help with query writing without accessing the data.
 
-### 8. Audit logging
+### 9. Audit logging
 
 The `--audit-log` flag writes every executed query to an NDJSON file with timestamps, row counts, and execution times. Use this for compliance and monitoring.
 
 See [Audit Logging](/features/audit-logging) for details.
+
+### 10. Observability
+
+OpenTelemetry tracing and metrics (`--otel`) let you monitor query latency, error rates, and tool usage in production. Traces include the full SQL statement, row counts, and error details.
+
+See [OpenTelemetry](/features/opentelemetry) for details.
 
 ## Recommended Postgres role
 
@@ -89,6 +103,9 @@ postgres://isthmus_reader:strong-random-password@localhost:5432/mydb
 - [ ] Set `SCHEMAS` to limit schema discovery
 - [ ] Set `MAX_ROWS` to a reasonable limit for your use case
 - [ ] Set `QUERY_TIMEOUT` appropriate for your database
+- [ ] Mask PII columns (`email`, `ssn`, `phone`, etc.) in your [policy YAML](/features/column-masking)
 - [ ] Enable `--audit-log` in production
 - [ ] Consider `--explain-only` if the AI should not access actual data
 - [ ] Review the audit log periodically
+- [ ] If using HTTP transport, bind to `127.0.0.1` or use a reverse proxy with TLS
+- [ ] Consider `--otel` for production monitoring of query performance and error rates

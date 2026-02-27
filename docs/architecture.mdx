@@ -8,18 +8,19 @@ Isthmus follows hexagonal architecture (ports & adapters). The core business log
 ## Directory structure
 
 ```
-cmd/isthmus/               → Binary entrypoint (single binary, stdio MCP)
+cmd/isthmus/               → Binary entrypoint (single binary, stdio + HTTP transports)
 internal/
   core/
     port/                  → Interfaces: SchemaExplorer, QueryExecutor, SchemaProfiler, QueryAuditor
-    domain/                → SQL validation (QueryValidator, pg_query AST), cardinality classification
+    domain/                → SQL validation (pg_query AST), cardinality, column masking (MaskType)
     service/               → Application services: ExplorerService, QueryService, ProfilerService
   adapter/
-    mcp/                   → MCP server factory + tool definitions
+    mcp/                   → MCP server factory + tool definitions + OTel hooks
     postgres/              → PostgreSQL implementation of ports (pgxpool, information_schema, pg_stats)
   audit/                   → File-based audit logging (NDJSON)
   config/                  → Environment variable + CLI flag loading
-  policy/                  → Policy engine: YAML loading, context enrichment
+  policy/                  → Policy engine: YAML loading, context enrichment, column masking
+  telemetry/               → OpenTelemetry: OTLP gRPC providers, metric instruments
 ```
 
 Everything is under `internal/` — Go's convention enforces module privacy. There is no `pkg/` directory.
@@ -55,12 +56,13 @@ type QueryAuditor interface {
 
 ## Data flow
 
-1. The MCP client sends a tool call (e.g. `describe_table`) over stdio
+1. The MCP client sends a tool call (e.g. `describe_table`) over stdio or HTTP
 2. The MCP adapter routes it to the appropriate service
 3. The service calls the port interface (e.g. `SchemaExplorer.DescribeTable`)
 4. The Postgres adapter executes SQL against the database
-5. The policy engine enriches the response (if configured)
-6. The result is serialized to JSON and returned over stdio
+5. The policy engine enriches the response and applies column masks (if configured)
+6. The result is serialized to JSON and returned to the client
+7. If OpenTelemetry is enabled, spans and metrics are recorded at each step
 
 ## Dependency injection
 

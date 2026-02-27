@@ -1,0 +1,261 @@
+---
+title: "Column Masking"
+description: "Protect PII and sensitive data with automatic column-level masking — configured in your policy YAML, enforced everywhere."
+---
+
+Column masking lets you define per-column data protection rules in your policy YAML. Masked columns are automatically redacted, hashed, partially hidden, or nullified in both `query` results and `profile_table` sample rows. No code changes, no database views, no application-layer middleware — just a YAML file.
+
+## Why column masking?
+
+AI models are powerful data analysts, but they don't need to see raw PII to write correct SQL. With column masking:
+
+- **Emails, SSNs, phone numbers** are redacted before the AI ever sees them
+- **Query results** are masked in real time — the AI gets useful structure without sensitive values
+- **Sample rows** in `profile_table` are also masked, so profiling doesn't leak PII
+- **Masking is enforced server-side** — the AI cannot bypass it, regardless of what SQL it generates
+
+## Enabling column masking
+
+Column masking is part of the [policy engine](/features/policy-engine). Add `mask` directives to any column in your policy YAML:
+
+```yaml
+context:
+  tables:
+    public.customers:
+      description: "Customer accounts"
+      columns:
+        email:
+          description: "Primary email address"
+          mask: "redact"
+        ssn:
+          description: "Social Security Number"
+          mask: "null"
+        phone:
+          description: "Phone number"
+          mask: "partial"
+        name:
+          description: "Full name"
+          mask: "hash"
+```
+
+Then point Isthmus at the file:
+
+```bash
+POLICY_FILE=./policy.yaml isthmus
+```
+
+At startup, Isthmus logs how many columns are masked:
+
+```
+{"level":"INFO","msg":"column masking enabled","masked_columns":4}
+```
+
+## Mask types
+
+There are four mask types. Each is designed for a different use case.
+
+### `redact`
+
+Replaces the value with `***`. Use for columns the AI never needs to see.
+
+| Input | Output |
+|---|---|
+| `"alice@example.com"` | `"***"` |
+| `12345` | `"***"` |
+| `NULL` | `NULL` |
+
+Best for: email addresses, API keys, passwords, tokens.
+
+### `hash`
+
+Replaces the value with a deterministic SHA-256 hex string (64 characters). Same input always produces the same hash, so the AI can still detect duplicates, join on hashed values, and count distinct entries — without seeing the original data.
+
+| Input | Output |
+|---|---|
+| `"alice@example.com"` | `"b4a6c8d2e1f0..."` (64 hex chars) |
+| `"alice@example.com"` | Same hash (deterministic) |
+| `"bob@example.com"` | Different hash |
+| `NULL` | `NULL` |
+
+Best for: columns where the AI needs to detect patterns (GROUP BY, JOIN, COUNT DISTINCT) without seeing raw values. Names, external IDs, usernames.
+
+### `partial`
+
+Reveals only the last 4 characters, replacing the rest with asterisks. Works correctly with unicode characters.
+
+| Input | Output |
+|---|---|
+| `"1234567890"` | `"******7890"` |
+| `"+1-555-867-5309"` | `"***********5309"` |
+| `"ab"` | `"***ab"` |
+| `NULL` | `NULL` |
+
+Best for: phone numbers, credit card numbers, account numbers — where partial visibility helps the AI understand the format.
+
+### `null`
+
+Replaces the value with `NULL`. The AI sees that the column exists but has no data.
+
+| Input | Output |
+|---|---|
+| `"alice@example.com"` | `NULL` |
+| `12345` | `NULL` |
+| `NULL` | `NULL` |
+
+Best for: columns that must be completely hidden. The AI can still query other columns in the same table.
+
+## How masking works
+
+### Query results
+
+When a `query` tool call returns results, Isthmus applies masks to every row before sending the response to the AI:
+
+```sql
+SELECT id, email, name FROM customers LIMIT 2
+```
+
+Without masking:
+```json
+[
+  {"id": 1, "email": "alice@example.com", "name": "Alice Johnson"},
+  {"id": 2, "email": "bob@example.com", "name": "Bob Smith"}
+]
+```
+
+With `email: redact` and `name: hash`:
+```json
+[
+  {"id": 1, "email": "***", "name": "a4f2e8c1d3b5..."},
+  {"id": 2, "email": "***", "name": "c7d9f0a2b4e6..."}
+]
+```
+
+### Profile sample rows
+
+The `profile_table` tool returns up to 5 sample rows. These are masked identically — same rules, same mask types:
+
+```json
+{
+  "schema": "public",
+  "name": "customers",
+  "sample_rows": [
+    {"id": 1, "email": "***", "name": "a4f2e8c1d3b5...", "phone": "***********5309"}
+  ]
+}
+```
+
+### Column name matching
+
+Masking matches by **column name only**, not by table. If you mask `email`, it applies to every column named `email` in every query result — regardless of which table it comes from, including JOINs, subqueries, and aliases.
+
+This is by design. SQL queries with JOINs, CTEs, and subqueries make it impossible to reliably map result column names back to source tables. Rather than building a fragile runtime mapper, Isthmus uses a simple, predictable rule: same column name = same mask.
+
+## Conflict detection
+
+Because masking is by column name, Isthmus validates at startup that no column name has conflicting mask types across tables. If two tables define different masks for the same column name, Isthmus rejects the policy file:
+
+```yaml
+# This will fail validation:
+context:
+  tables:
+    public.users:
+      columns:
+        email:
+          mask: "redact"      # redact here...
+    public.contacts:
+      columns:
+        email:
+          mask: "hash"        # ...but hash here? Conflict!
+```
+
+```
+error: validating policy: column "email" has conflicting masks: "redact" in public.users vs "hash" in public.contacts
+```
+
+The same column name with the **same mask** across multiple tables is fine:
+
+```yaml
+# This is valid — both use "redact"
+context:
+  tables:
+    public.users:
+      columns:
+        email:
+          mask: "redact"
+    public.contacts:
+      columns:
+        email:
+          mask: "redact"
+```
+
+## Full example
+
+A realistic policy YAML with masking:
+
+```yaml
+context:
+  tables:
+    public.customers:
+      description: "Registered platform customers"
+      columns:
+        id: "Unique customer identifier (UUID)"
+        email:
+          description: "Primary email address, used for login"
+          mask: "redact"
+        name:
+          description: "Full display name"
+          mask: "hash"
+        phone:
+          description: "Phone number with country code"
+          mask: "partial"
+        ssn:
+          description: "Social Security Number (US)"
+          mask: "null"
+        created_at: "Account creation timestamp (UTC)"
+
+    public.orders:
+      description: "Purchase orders"
+      columns:
+        id: "Unique order identifier (UUID)"
+        customer_id: "FK to customers.id"
+        status: "Order lifecycle: draft, pending, paid, shipped, delivered, cancelled"
+        amount_cents: "Order total in cents (USD)"
+
+    public.employees:
+      description: "Internal employee records"
+      columns:
+        id: "Employee ID"
+        email:
+          description: "Corporate email"
+          mask: "redact"
+        salary_cents:
+          description: "Annual salary in cents (USD)"
+          mask: "null"
+```
+
+Note that `email` appears in both `customers` and `employees` with the same mask (`redact`), which is valid.
+
+## Type behavior
+
+Masked values may change type. This is intentional and documented here for completeness:
+
+| Original type | Mask | Result type |
+|---|---|---|
+| `string` | `redact` | `string` (`"***"`) |
+| `int` | `redact` | `string` (`"***"`) |
+| `string` | `hash` | `string` (64 hex chars) |
+| `int` | `hash` | `string` (64 hex chars) |
+| `string` | `partial` | `string` |
+| `int` | `partial` | `string` |
+| any | `null` | `null` |
+| `NULL` | any | `null` |
+
+## Tips
+
+- **Start with `redact`** — it's the safest default for PII columns.
+- **Use `hash` when the AI needs to detect patterns** — GROUP BY, JOIN, or COUNT DISTINCT still work on hashed values.
+- **Use `partial` for phone numbers and account numbers** — the last 4 digits help the AI understand the format without exposing the full value.
+- **Use `null` for columns that should be completely invisible** — salaries, SSNs, medical data.
+- **Masking + business descriptions work together** — the AI sees `"description": "Primary email address"` alongside `"***"`, so it knows *what* the column is without seeing the *values*.
+- **Mask liberally, describe generously** — err on the side of masking more columns. The AI writes better SQL when it understands the schema (via descriptions) than when it sees raw data.
+- **Think about JOINs** — if you mask `email` in one table, mask it in all tables. Isthmus enforces this consistency at startup.

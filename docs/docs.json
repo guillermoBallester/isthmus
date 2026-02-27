@@ -46,6 +46,9 @@
             "group": "Features",
             "pages": [
               "features/policy-engine",
+              "features/column-masking",
+              "features/http-transport",
+              "features/opentelemetry",
               "features/schema-filtering",
               "features/audit-logging",
               "features/sql-validation"

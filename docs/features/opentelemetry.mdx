@@ -1,0 +1,163 @@
+---
+title: "OpenTelemetry"
+description: "Distributed tracing and metrics for Isthmus — monitor query performance, tool latency, and error rates."
+---
+
+Isthmus has built-in [OpenTelemetry](https://opentelemetry.io/) (OTel) support for distributed tracing and metrics. When enabled, every SQL query and MCP tool call emits traces and metrics to your OTel collector — Jaeger, Grafana Tempo, Datadog, Honeycomb, or any OTLP-compatible backend.
+
+## Enabling OpenTelemetry
+
+Set the `--otel` CLI flag or `OTEL_ENABLED` environment variable:
+
+```bash
+isthmus --otel
+```
+
+```bash
+OTEL_ENABLED=true isthmus
+```
+
+At startup, Isthmus logs that OTel is active:
+
+```
+{"level":"INFO","msg":"opentelemetry enabled"}
+```
+
+## Configuring the exporter
+
+Isthmus uses OTLP gRPC exporters for both traces and metrics. The OTel SDK reads standard environment variables to configure the exporter endpoint:
+
+| Env var | Default | Description |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTLP gRPC endpoint for traces and metrics |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | *(falls back to above)* | Override endpoint for traces only |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | *(falls back to above)* | Override endpoint for metrics only |
+
+These are standard OTel SDK environment variables — not Isthmus-specific. See the [OTel SDK docs](https://opentelemetry.io/docs/specs/otel/protocol/exporter/) for the full list.
+
+### Example: local Jaeger
+
+```bash
+# Start Jaeger (all-in-one, with OTLP gRPC on :4317)
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+
+# Start Isthmus with OTel
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 \
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb \
+isthmus --otel
+```
+
+Then open `http://localhost:16686` to see traces.
+
+### Example: Grafana Tempo + Prometheus
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 \
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb \
+isthmus --otel
+```
+
+### Example: MCP client config
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "isthmus",
+      "args": ["--otel"],
+      "env": {
+        "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "localhost:4317"
+      }
+    }
+  }
+}
+```
+
+## Traces
+
+Isthmus emits two types of spans:
+
+### Query spans
+
+Every SQL query executed through the `query` or `explain_query` tool creates a span:
+
+| Attribute | Type | Description |
+|---|---|---|
+| `db.system` | string | Always `"postgresql"` |
+| `db.operation.name` | string | `"query"` |
+| `db.statement` | string | The SQL statement |
+| `db.response.rows` | int | Number of rows returned (on success) |
+
+If the query fails (validation error, execution error), the error is recorded on the span.
+
+### Tool call spans
+
+Every MCP tool call (`list_schemas`, `describe_table`, `query`, etc.) creates a span:
+
+| Attribute | Type | Description |
+|---|---|---|
+| `mcp.tool` | string | Tool name (e.g. `"query"`, `"describe_table"`) |
+| `error` | bool | `true` if the tool call failed |
+
+Tool call spans are parents of query spans — so a `query` tool call shows the full lifecycle: MCP dispatch, SQL validation, query execution, and masking.
+
+## Metrics
+
+Isthmus exposes four metrics:
+
+| Metric | Type | Unit | Description |
+|---|---|---|---|
+| `isthmus.query.count` | Counter | — | Total number of SQL queries executed |
+| `isthmus.query.duration` | Histogram | ms | SQL query execution time |
+| `isthmus.query.errors` | Counter | — | Total number of failed queries (validation + execution) |
+| `isthmus.tool.duration` | Histogram | ms | MCP tool call duration (end-to-end) |
+
+### Useful queries
+
+If your backend supports PromQL or a similar query language:
+
+```promql
+# Query throughput (queries per second)
+rate(isthmus_query_count_total[5m])
+
+# Error rate
+rate(isthmus_query_errors_total[5m]) / rate(isthmus_query_count_total[5m])
+
+# p95 query latency
+histogram_quantile(0.95, rate(isthmus_query_duration_bucket[5m]))
+
+# p99 tool call latency
+histogram_quantile(0.99, rate(isthmus_tool_duration_bucket[5m]))
+```
+
+## Service resource
+
+Isthmus registers itself with the following OTel resource attributes:
+
+| Attribute | Value |
+|---|---|
+| `service.name` | `isthmus` |
+| `service.version` | Build version (e.g. `v0.5.0`) |
+
+These appear in your tracing UI and can be used to filter traces.
+
+## Graceful shutdown
+
+When Isthmus receives `SIGTERM` or `SIGINT`, it flushes all pending traces and metrics before exiting (with a 5-second timeout). This ensures no data is lost during graceful shutdown.
+
+## When OTel is disabled
+
+When `--otel` is not set (the default), all tracing and metrics use no-op implementations. There is zero overhead — no goroutines, no allocations, no network calls. You can safely leave OTel disabled in development.
+
+## Semantic conventions
+
+Isthmus follows the [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/) for database spans:
+
+- `db.system` = `"postgresql"` ([database semconv](https://opentelemetry.io/docs/specs/semconv/database/database-spans/))
+- `db.operation.name` for the operation type
+- `db.statement` for the SQL query
+- `db.response.rows` for the result size
