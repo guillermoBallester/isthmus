@@ -289,7 +289,8 @@ func isValidationError(err error) bool {
 	return errors.Is(err, domain.ErrEmptyQuery) ||
 		errors.Is(err, domain.ErrNotAllowed) ||
 		errors.Is(err, domain.ErrMultiStatement) ||
-		errors.Is(err, domain.ErrParseFailed)
+		errors.Is(err, domain.ErrParseFailed) ||
+		errors.Is(err, domain.ErrNotFound)
 }
 
 // isTimeoutError returns true for timeout-related errors at any level.
