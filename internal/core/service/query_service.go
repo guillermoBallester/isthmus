@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type toolNameKey struct{}
@@ -40,7 +41,7 @@ type QueryService struct {
 
 func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger, masks map[string]domain.MaskType, tracer trace.Tracer, inst port.Instrumentation) *QueryService {
 	if tracer == nil {
-		tracer = trace.NewNoopTracerProvider().Tracer("noop")
+		tracer = noop.NewTracerProvider().Tracer("noop")
 	}
 	if inst == nil {
 		inst = port.NoopInstrumentation{}

@@ -13,6 +13,7 @@ var (
 	ErrNotAllowed     = errors.New("only SELECT queries are allowed")
 	ErrMultiStatement = errors.New("multiple statements are not allowed")
 	ErrParseFailed    = errors.New("failed to parse SQL")
+	ErrNotFound       = errors.New("not found")
 )
 
 // PgQueryValidator validates SQL statements using PostgreSQL's actual parser.

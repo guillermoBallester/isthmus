@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -89,7 +91,10 @@ func (p *Profiler) resolveSchema(ctx context.Context, tableName string) (string,
 	var schema string
 	err := p.pool.QueryRow(ctx, query, args...).Scan(&schema)
 	if err != nil {
-		return "", fmt.Errorf("table %q not found: %w", tableName, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("table %q %w", tableName, domain.ErrNotFound)
+		}
+		return "", fmt.Errorf("resolving schema for table %q: %w", tableName, err)
 	}
 	return schema, nil
 }
