@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/guillermoBallester/isthmus/internal/core/port"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- LoadFromFile tests ---
@@ -26,37 +28,97 @@ context:
 	path := writeTempFile(t, yaml)
 
 	pol, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(pol.Context.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(pol.Context.Tables))
-	}
+	require.NoError(t, err)
+	assert.Len(t, pol.Context.Tables, 2)
 
 	users := pol.Context.Tables["public.users"]
-	if users.Description != "Registered platform users" {
-		t.Errorf("unexpected description: %q", users.Description)
-	}
-	if users.Columns["mrr"] != "Monthly Recurring Revenue in cents" {
-		t.Errorf("unexpected column desc: %q", users.Columns["mrr"])
-	}
+	assert.Equal(t, "Registered platform users", users.Description)
+	assert.Equal(t, "Monthly Recurring Revenue in cents", users.Columns["mrr"].Description)
+	assert.Empty(t, users.Columns["mrr"].Mask)
+}
+
+func TestLoadFromFile_WithMasks(t *testing.T) {
+	yaml := `
+context:
+  tables:
+    public.customers:
+      description: "Customer accounts"
+      columns:
+        email:
+          description: "Customer email"
+          mask: "redact"
+        ssn:
+          mask: "null"
+        phone:
+          description: "Phone"
+          mask: "partial"
+        name:
+          description: "Full name"
+`
+	path := writeTempFile(t, yaml)
+
+	pol, err := LoadFromFile(path)
+	require.NoError(t, err)
+
+	customers := pol.Context.Tables["public.customers"]
+	assert.Equal(t, "redact", customers.Columns["email"].Mask)
+	assert.Equal(t, "Customer email", customers.Columns["email"].Description)
+	assert.Equal(t, "null", customers.Columns["ssn"].Mask)
+	assert.Equal(t, "partial", customers.Columns["phone"].Mask)
+	assert.Empty(t, customers.Columns["name"].Mask)
+	assert.Equal(t, "Full name", customers.Columns["name"].Description)
+}
+
+func TestLoadFromFile_MixedFormats(t *testing.T) {
+	yaml := `
+context:
+  tables:
+    public.users:
+      columns:
+        mrr: "MRR in cents"
+        email:
+          description: "User email"
+          mask: "hash"
+`
+	path := writeTempFile(t, yaml)
+
+	pol, err := LoadFromFile(path)
+	require.NoError(t, err)
+
+	users := pol.Context.Tables["public.users"]
+	assert.Equal(t, "MRR in cents", users.Columns["mrr"].Description)
+	assert.Empty(t, users.Columns["mrr"].Mask)
+	assert.Equal(t, "User email", users.Columns["email"].Description)
+	assert.Equal(t, "hash", users.Columns["email"].Mask)
+}
+
+func TestLoadFromFile_InvalidMask(t *testing.T) {
+	yaml := `
+context:
+  tables:
+    public.users:
+      columns:
+        email:
+          mask: "encrypt"
+`
+	path := writeTempFile(t, yaml)
+
+	_, err := LoadFromFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid value")
+	assert.Contains(t, err.Error(), "encrypt")
 }
 
 func TestLoadFromFile_NotFound(t *testing.T) {
 	_, err := LoadFromFile("/nonexistent/policy.yaml")
-	if err == nil {
-		t.Fatal("expected error for missing file")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadFromFile_InvalidYAML(t *testing.T) {
 	path := writeTempFile(t, "context:\n  tables: [invalid")
 
 	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected error for invalid YAML")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadFromFile_EmptyTableKey(t *testing.T) {
@@ -69,9 +131,7 @@ context:
 	path := writeTempFile(t, yaml)
 
 	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected validation error for empty table key")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadFromFile_EmptyColumnKey(t *testing.T) {
@@ -85,9 +145,7 @@ context:
 	path := writeTempFile(t, yaml)
 
 	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected validation error for empty column key")
-	}
+	require.Error(t, err)
 }
 
 // --- MergeTableDetail tests ---
@@ -97,9 +155,9 @@ func TestMergeTableDetail_MergesWhenEmpty(t *testing.T) {
 		Tables: map[string]TableContext{
 			"public.users": {
 				Description: "Platform users",
-				Columns: map[string]string{
-					"email": "User email address",
-					"mrr":   "Monthly Recurring Revenue",
+				Columns: map[string]ColumnContext{
+					"email": {Description: "User email address"},
+					"mrr":   {Description: "Monthly Recurring Revenue"},
 				},
 			},
 		},
@@ -119,18 +177,10 @@ func TestMergeTableDetail_MergesWhenEmpty(t *testing.T) {
 
 	MergeTableDetail(detail, ctx)
 
-	if detail.Comment != "Platform users" {
-		t.Errorf("table comment: got %q, want %q", detail.Comment, "Platform users")
-	}
-	if detail.Columns[1].Comment != "User email address" {
-		t.Errorf("email comment: got %q, want %q", detail.Columns[1].Comment, "User email address")
-	}
-	if detail.Columns[2].Comment != "Monthly Recurring Revenue" {
-		t.Errorf("mrr comment: got %q, want %q", detail.Columns[2].Comment, "Monthly Recurring Revenue")
-	}
-	if detail.Columns[3].Comment != "" {
-		t.Errorf("name comment should be empty, got %q", detail.Columns[3].Comment)
-	}
+	assert.Equal(t, "Platform users", detail.Comment)
+	assert.Equal(t, "User email address", detail.Columns[1].Comment)
+	assert.Equal(t, "Monthly Recurring Revenue", detail.Columns[2].Comment)
+	assert.Empty(t, detail.Columns[3].Comment)
 }
 
 func TestMergeTableDetail_DoesNotOverwriteExisting(t *testing.T) {
@@ -138,8 +188,8 @@ func TestMergeTableDetail_DoesNotOverwriteExisting(t *testing.T) {
 		Tables: map[string]TableContext{
 			"public.users": {
 				Description: "From YAML",
-				Columns: map[string]string{
-					"email": "From YAML",
+				Columns: map[string]ColumnContext{
+					"email": {Description: "From YAML"},
 				},
 			},
 		},
@@ -156,12 +206,8 @@ func TestMergeTableDetail_DoesNotOverwriteExisting(t *testing.T) {
 
 	MergeTableDetail(detail, ctx)
 
-	if detail.Comment != "From Postgres" {
-		t.Errorf("table comment should not be overwritten: got %q", detail.Comment)
-	}
-	if detail.Columns[0].Comment != "From Postgres" {
-		t.Errorf("column comment should not be overwritten: got %q", detail.Columns[0].Comment)
-	}
+	assert.Equal(t, "From Postgres", detail.Comment)
+	assert.Equal(t, "From Postgres", detail.Columns[0].Comment)
 }
 
 func TestMergeTableDetail_NoMatchingTable(t *testing.T) {
@@ -179,9 +225,7 @@ func TestMergeTableDetail_NoMatchingTable(t *testing.T) {
 
 	MergeTableDetail(detail, ctx)
 
-	if detail.Comment != "" {
-		t.Errorf("comment should remain empty, got %q", detail.Comment)
-	}
+	assert.Empty(t, detail.Comment)
 }
 
 func TestMergeTableDetail_NilDetail(t *testing.T) {
@@ -212,15 +256,47 @@ func TestMergeTableInfoList(t *testing.T) {
 
 	MergeTableInfoList(tables, ctx)
 
-	if tables[0].Comment != "Platform users" {
-		t.Errorf("users comment: got %q, want %q", tables[0].Comment, "Platform users")
+	assert.Equal(t, "Platform users", tables[0].Comment)
+	assert.Equal(t, "Existing comment", tables[1].Comment)
+	assert.Empty(t, tables[2].Comment)
+}
+
+// --- MaskSpec tests ---
+
+func TestMaskSpec(t *testing.T) {
+	ctx := ContextConfig{
+		Tables: map[string]TableContext{
+			"public.users": {
+				Columns: map[string]ColumnContext{
+					"email": {Description: "User email", Mask: "redact"},
+					"name":  {Description: "Full name"},
+				},
+			},
+			"public.orders": {
+				Columns: map[string]ColumnContext{
+					"total": {Description: "Order total"},
+				},
+			},
+		},
 	}
-	if tables[1].Comment != "Existing comment" {
-		t.Errorf("orders comment should not be overwritten: got %q", tables[1].Comment)
+
+	spec := MaskSpec(ctx)
+	assert.Equal(t, map[string]string{"email": "redact"}, spec)
+}
+
+func TestMaskSpec_Empty(t *testing.T) {
+	ctx := ContextConfig{
+		Tables: map[string]TableContext{
+			"public.users": {
+				Columns: map[string]ColumnContext{
+					"name": {Description: "Full name"},
+				},
+			},
+		},
 	}
-	if tables[2].Comment != "" {
-		t.Errorf("products comment should be empty: got %q", tables[2].Comment)
-	}
+
+	spec := MaskSpec(ctx)
+	assert.Empty(t, spec)
 }
 
 // --- PolicyExplorer tests ---
@@ -242,8 +318,8 @@ func TestPolicyExplorer_DescribeTable(t *testing.T) {
 			Tables: map[string]TableContext{
 				"public.users": {
 					Description: "Registered users",
-					Columns: map[string]string{
-						"email": "User email",
+					Columns: map[string]ColumnContext{
+						"email": {Description: "User email"},
 					},
 				},
 			},
@@ -252,16 +328,10 @@ func TestPolicyExplorer_DescribeTable(t *testing.T) {
 
 	pe := NewPolicyExplorer(inner, pol)
 	detail, err := pe.DescribeTable(context.Background(), "public", "users")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	if detail.Comment != "Registered users" {
-		t.Errorf("table comment: got %q, want %q", detail.Comment, "Registered users")
-	}
-	if detail.Columns[1].Comment != "User email" {
-		t.Errorf("email comment: got %q, want %q", detail.Columns[1].Comment, "User email")
-	}
+	assert.Equal(t, "Registered users", detail.Comment)
+	assert.Equal(t, "User email", detail.Columns[1].Comment)
 }
 
 func TestPolicyExplorer_ListTables(t *testing.T) {
@@ -281,13 +351,9 @@ func TestPolicyExplorer_ListTables(t *testing.T) {
 
 	pe := NewPolicyExplorer(inner, pol)
 	tables, err := pe.ListTables(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	if tables[0].Comment != "Registered users" {
-		t.Errorf("comment: got %q, want %q", tables[0].Comment, "Registered users")
-	}
+	assert.Equal(t, "Registered users", tables[0].Comment)
 }
 
 func TestPolicyExplorer_ListSchemas(t *testing.T) {
@@ -299,12 +365,50 @@ func TestPolicyExplorer_ListSchemas(t *testing.T) {
 	pe := NewPolicyExplorer(inner, pol)
 
 	schemas, err := pe.ListSchemas(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	require.NoError(t, err)
+	require.Len(t, schemas, 1)
+	assert.Equal(t, "public", schemas[0].Name)
+}
+
+// --- MaskingProfiler tests ---
+
+func TestMaskingProfiler(t *testing.T) {
+	inner := &mockProfiler{
+		result: &port.TableProfile{
+			Schema: "public",
+			Name:   "users",
+			SampleRows: []map[string]any{
+				{"id": 1, "email": "alice@example.com", "name": "Alice"},
+				{"id": 2, "email": "bob@example.com", "name": "Bob"},
+			},
+		},
 	}
-	if len(schemas) != 1 || schemas[0].Name != "public" {
-		t.Errorf("unexpected schemas: %v", schemas)
+
+	masks := map[string]string{"email": "redact"}
+	mp := NewMaskingProfiler(inner, masks)
+
+	profile, err := mp.ProfileTable(context.Background(), "public", "users")
+	require.NoError(t, err)
+
+	assert.Equal(t, "***", profile.SampleRows[0]["email"])
+	assert.Equal(t, "***", profile.SampleRows[1]["email"])
+	assert.Equal(t, "Alice", profile.SampleRows[0]["name"])
+}
+
+func TestMaskingProfiler_NoMasks(t *testing.T) {
+	inner := &mockProfiler{
+		result: &port.TableProfile{
+			SampleRows: []map[string]any{
+				{"email": "alice@example.com"},
+			},
+		},
 	}
+
+	mp := NewMaskingProfiler(inner, nil)
+	profile, err := mp.ProfileTable(context.Background(), "public", "users")
+	require.NoError(t, err)
+
+	assert.Equal(t, "alice@example.com", profile.SampleRows[0]["email"])
 }
 
 // --- helpers ---
@@ -325,6 +429,14 @@ func (m *mockExplorer) ListTables(_ context.Context) ([]port.TableInfo, error) {
 
 func (m *mockExplorer) DescribeTable(_ context.Context, _, _ string) (*port.TableDetail, error) {
 	return m.describeResult, nil
+}
+
+type mockProfiler struct {
+	result *port.TableProfile
+}
+
+func (m *mockProfiler) ProfileTable(_ context.Context, _, _ string) (*port.TableProfile, error) {
+	return m.result, nil
 }
 
 func writeTempFile(t *testing.T, content string) string {
