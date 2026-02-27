@@ -57,6 +57,8 @@ func Init(ctx context.Context, serviceName, version string) (*Provider, error) {
 
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
+	// Propagator enables trace context propagation via HTTP headers (W3C Trace Context).
+	// Only effective for HTTP transport; stdio has no header propagation.
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	return &Provider{tp: tp, mp: mp}, nil

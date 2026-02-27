@@ -129,7 +129,7 @@ func setupE2E(t *testing.T) *server.MCPServer {
 
 	// Real services.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	querySvc := service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger, nil)
+	querySvc := service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger, nil, nil, nil)
 
 	// Real MCP server.
 	s := server.NewMCPServer("test-e2e", "0.0.1", server.WithToolCapabilities(true))

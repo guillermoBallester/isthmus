@@ -173,16 +173,15 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 }
 
 func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
-	validator := domain.NewPgQueryValidator()
-	querySvc := service.NewQueryService(validator, executor, auditor, logger, masks)
-
 	var tracer = telemetry.NoopTracer()
 	var inst = telemetry.NoopInstruments()
 	if cfg.OTelEnabled {
 		tracer = otel.Tracer("github.com/guillermoBallester/isthmus")
 		inst = telemetry.NewInstruments()
-		querySvc.SetTelemetry(tracer, inst)
 	}
+
+	validator := domain.NewPgQueryValidator()
+	querySvc := service.NewQueryService(validator, executor, auditor, logger, masks, tracer, inst)
 
 	mcpServer := mcp.NewServer(ver, explorer, profiler, querySvc, logger, tracer, inst)
 
