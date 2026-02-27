@@ -46,6 +46,14 @@ func (e *Executor) Execute(ctx context.Context, sql string) ([]map[string]any, e
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Enforce statement timeout at the database level so PostgreSQL cancels
+	// the query server-side even if the Go context is cancelled first.
+	// SET LOCAL scopes to this transaction only — no global side effects.
+	timeoutMS := e.queryTimeout.Milliseconds()
+	if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = '%d'", timeoutMS)); err != nil {
+		return nil, fmt.Errorf("setting statement timeout: %w", err)
+	}
+
 	rows, err := tx.Query(ctx, wrappedSQL)
 	if err != nil {
 		return nil, fmt.Errorf("executing query: %w", err)

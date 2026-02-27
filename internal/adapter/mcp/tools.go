@@ -3,10 +3,16 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net"
+	"strings"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -62,19 +68,19 @@ const (
 	descExplainQuerySQL = "The SELECT query to explain (without the EXPLAIN keyword)"
 )
 
-func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler port.SchemaProfiler, query *service.QueryService) {
+func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler port.SchemaProfiler, query *service.QueryService, logger *slog.Logger) {
 	s.AddTool(
 		mcp.NewTool("list_schemas",
 			mcp.WithDescription(descListSchemas),
 		),
-		listSchemasHandler(explorer),
+		listSchemasHandler(explorer, logger),
 	)
 
 	s.AddTool(
 		mcp.NewTool("list_tables",
 			mcp.WithDescription(descListTables),
 		),
-		listTablesHandler(explorer),
+		listTablesHandler(explorer, logger),
 	)
 
 	s.AddTool(
@@ -88,7 +94,7 @@ func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler p
 				mcp.Description("Schema name (optional, resolves automatically if omitted)"),
 			),
 		),
-		describeTableHandler(explorer),
+		describeTableHandler(explorer, logger),
 	)
 
 	if profiler != nil {
@@ -103,7 +109,7 @@ func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler p
 					mcp.Description("Schema name (optional, resolves automatically if omitted)"),
 				),
 			),
-			profileTableHandler(profiler),
+			profileTableHandler(profiler, logger),
 		)
 	}
 
@@ -115,7 +121,7 @@ func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler p
 				mcp.Description(descQueryParam),
 			),
 		),
-		queryHandler(query),
+		queryHandler(query, logger),
 	)
 
 	s.AddTool(
@@ -129,43 +135,43 @@ func RegisterTools(s *server.MCPServer, explorer port.SchemaExplorer, profiler p
 				mcp.Description("Include actual execution statistics (executes the query). Defaults to false."),
 			),
 		),
-		explainQueryHandler(query),
+		explainQueryHandler(query, logger),
 	)
 }
 
-func listSchemasHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
+func listSchemasHandler(explorer port.SchemaExplorer, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		schemas, err := explorer.ListSchemas(ctx)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list schemas: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "list schemas")), nil
 		}
 
 		data, err := json.Marshal(schemas)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "list schemas")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-func listTablesHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
+func listTablesHandler(explorer port.SchemaExplorer, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tables, err := explorer.ListTables(ctx)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list tables: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "list tables")), nil
 		}
 
 		data, err := json.Marshal(tables)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "list tables")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-func describeTableHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
+func describeTableHandler(explorer port.SchemaExplorer, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tableName, ok := request.GetArguments()["table_name"].(string)
 		if !ok || tableName == "" {
@@ -176,19 +182,19 @@ func describeTableHandler(explorer port.SchemaExplorer) server.ToolHandlerFunc {
 
 		detail, err := explorer.DescribeTable(ctx, schema, tableName)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to describe table: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "describe table")), nil
 		}
 
 		data, err := json.Marshal(detail)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "describe table")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-func profileTableHandler(profiler port.SchemaProfiler) server.ToolHandlerFunc {
+func profileTableHandler(profiler port.SchemaProfiler, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tableName, ok := request.GetArguments()["table_name"].(string)
 		if !ok || tableName == "" {
@@ -199,19 +205,19 @@ func profileTableHandler(profiler port.SchemaProfiler) server.ToolHandlerFunc {
 
 		profile, err := profiler.ProfileTable(ctx, schema, tableName)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to profile table: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "profile table")), nil
 		}
 
 		data, err := json.Marshal(profile)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "profile table")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-func explainQueryHandler(query *service.QueryService) server.ToolHandlerFunc {
+func explainQueryHandler(query *service.QueryService, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sql, ok := request.GetArguments()["sql"].(string)
 		if !ok || sql == "" {
@@ -228,19 +234,19 @@ func explainQueryHandler(query *service.QueryService) server.ToolHandlerFunc {
 		ctx = service.WithToolName(ctx, "explain_query")
 		results, err := query.Execute(ctx, prefix+sql)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("explain failed: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "explain query")), nil
 		}
 
 		data, err := json.Marshal(results)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "explain query")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-func queryHandler(query *service.QueryService) server.ToolHandlerFunc {
+func queryHandler(query *service.QueryService, logger *slog.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sql, ok := request.GetArguments()["sql"].(string)
 		if !ok || sql == "" {
@@ -250,14 +256,77 @@ func queryHandler(query *service.QueryService) server.ToolHandlerFunc {
 		ctx = service.WithToolName(ctx, "query")
 		results, err := query.Execute(ctx, sql)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("query failed: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "query")), nil
 		}
 
 		data, err := json.Marshal(results)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
+			return mcp.NewToolResultError(sanitizeError(logger, err, "query")), nil
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
 	}
+}
+
+// sanitizeError logs the full error for debugging and returns a safe message for the MCP client.
+// Validation errors (controlled by us) are passed through; infrastructure errors are redacted.
+func sanitizeError(logger *slog.Logger, err error, operation string) string {
+	logger.Error("tool error", slog.String("operation", operation), slog.String("error", err.Error()))
+
+	if isValidationError(err) {
+		return fmt.Sprintf("%s: %v", operation, err)
+	}
+	if isTimeoutError(err) {
+		return fmt.Sprintf("%s: query timed out", operation)
+	}
+	if isConnectionError(err) {
+		return fmt.Sprintf("%s: database unavailable", operation)
+	}
+	return fmt.Sprintf("%s: internal error (check server logs)", operation)
+}
+
+// isValidationError returns true for errors we control and are safe to show to clients.
+func isValidationError(err error) bool {
+	if errors.Is(err, domain.ErrEmptyQuery) ||
+		errors.Is(err, domain.ErrNotAllowed) ||
+		errors.Is(err, domain.ErrMultiStatement) {
+		return true
+	}
+	// Parse errors from pg_query are also validation-level (they come from our validator).
+	if strings.Contains(err.Error(), "failed to parse SQL") {
+		return true
+	}
+	return false
+}
+
+// isTimeoutError returns true for timeout-related errors at any level.
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// PostgreSQL statement_timeout: SQLSTATE 57014.
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "57014" {
+		return true
+	}
+	// net.Error timeout (e.g. TCP read timeout).
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return false
+}
+
+// isConnectionError returns true for connection-level failures.
+func isConnectionError(err error) bool {
+	var connErr *pgconn.ConnectError
+	if errors.As(err, &connErr) {
+		return true
+	}
+	// Non-timeout net errors (connection refused, reset, etc).
+	var netErr net.Error
+	if errors.As(err, &netErr) && !netErr.Timeout() {
+		return true
+	}
+	return false
 }

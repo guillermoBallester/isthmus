@@ -245,11 +245,13 @@ func TestLoad_TransportHTTP(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("TRANSPORT", "http")
 	t.Setenv("HTTP_ADDR", ":9090")
+	t.Setenv("HTTP_BEARER_TOKEN", "secret")
 
 	cfg, err := Load(Overrides{})
 	require.NoError(t, err)
 	assert.Equal(t, "http", cfg.Transport)
 	assert.Equal(t, ":9090", cfg.HTTPAddr)
+	assert.Equal(t, "secret", cfg.HTTPBearerToken)
 }
 
 func TestLoad_TransportInvalid(t *testing.T) {
@@ -266,10 +268,12 @@ func TestLoad_TransportOverride(t *testing.T) {
 
 	transport := "http"
 	httpAddr := ":3000"
-	cfg, err := Load(Overrides{Transport: &transport, HTTPAddr: &httpAddr})
+	token := "my-token"
+	cfg, err := Load(Overrides{Transport: &transport, HTTPAddr: &httpAddr, HTTPBearerToken: &token})
 	require.NoError(t, err)
 	assert.Equal(t, "http", cfg.Transport)
 	assert.Equal(t, ":3000", cfg.HTTPAddr)
+	assert.Equal(t, "my-token", cfg.HTTPBearerToken)
 }
 
 func TestLoad_OTelEnabled(t *testing.T) {
@@ -296,4 +300,105 @@ func TestLoad_OTelEnabledInvalid(t *testing.T) {
 	_, err := Load(Overrides{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "OTEL_ENABLED")
+}
+
+// --- Bearer token tests ---
+
+func TestLoad_HTTPTransportRequiresToken(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("TRANSPORT", "http")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP_BEARER_TOKEN")
+}
+
+func TestLoad_StdioIgnoresMissingToken(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "stdio", cfg.Transport)
+	assert.Empty(t, cfg.HTTPBearerToken)
+}
+
+func TestLoad_HTTPBearerTokenCLIOverridesEnv(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("TRANSPORT", "http")
+	t.Setenv("HTTP_BEARER_TOKEN", "env-token")
+
+	token := "cli-token"
+	cfg, err := Load(Overrides{HTTPBearerToken: &token})
+	require.NoError(t, err)
+	assert.Equal(t, "cli-token", cfg.HTTPBearerToken)
+}
+
+// --- Pool config tests ---
+
+func TestLoad_PoolDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(5), cfg.PoolMaxConns)
+	assert.Equal(t, int32(1), cfg.PoolMinConns)
+	assert.Equal(t, 30*time.Minute, cfg.PoolMaxConnLifetime)
+}
+
+func TestLoad_PoolEnvVars(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("POOL_MAX_CONNS", "10")
+	t.Setenv("POOL_MIN_CONNS", "2")
+	t.Setenv("POOL_MAX_CONN_LIFETIME", "1h")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(10), cfg.PoolMaxConns)
+	assert.Equal(t, int32(2), cfg.PoolMinConns)
+	assert.Equal(t, time.Hour, cfg.PoolMaxConnLifetime)
+}
+
+func TestLoad_PoolInvalidMaxConns(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("POOL_MAX_CONNS", "-1")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "POOL_MAX_CONNS")
+}
+
+func TestLoad_PoolInvalidMinConns(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("POOL_MIN_CONNS", "-1")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "POOL_MIN_CONNS")
+}
+
+func TestLoad_PoolMinExceedsMax(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("POOL_MAX_CONNS", "2")
+	t.Setenv("POOL_MIN_CONNS", "5")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "POOL_MIN_CONNS")
+}
+
+func TestLoad_PoolCLIOverrides(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	maxConns := int32(20)
+	minConns := int32(3)
+	lifetime := 45 * time.Minute
+	cfg, err := Load(Overrides{
+		PoolMaxConns:        &maxConns,
+		PoolMinConns:        &minConns,
+		PoolMaxConnLifetime: &lifetime,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(20), cfg.PoolMaxConns)
+	assert.Equal(t, int32(3), cfg.PoolMinConns)
+	assert.Equal(t, 45*time.Minute, cfg.PoolMaxConnLifetime)
 }

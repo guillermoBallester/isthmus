@@ -133,7 +133,7 @@ func setupE2E(t *testing.T) *server.MCPServer {
 
 	// Real MCP server.
 	s := server.NewMCPServer("test-e2e", "0.0.1", server.WithToolCapabilities(true))
-	RegisterTools(s, explorer, profiler, querySvc)
+	RegisterTools(s, explorer, profiler, querySvc, logger)
 	return s
 }
 

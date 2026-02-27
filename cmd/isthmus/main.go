@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -114,7 +117,11 @@ func newLogger(cfg *config.Config) *slog.Logger {
 }
 
 func connectDB(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
-	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL, postgres.PoolOptions{
+		MaxConns:        cfg.PoolMaxConns,
+		MinConns:        cfg.PoolMinConns,
+		MaxConnLifetime: cfg.PoolMaxConnLifetime,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
@@ -187,7 +194,7 @@ func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.Sc
 
 	switch cfg.Transport {
 	case "http":
-		return serveHTTP(ctx, mcpServer, cfg.HTTPAddr, logger)
+		return serveHTTP(ctx, mcpServer, cfg.HTTPAddr, cfg.HTTPBearerToken, logger)
 	default:
 		return serveStdio(ctx, mcpServer, logger)
 	}
@@ -205,14 +212,22 @@ func serveStdio(ctx context.Context, mcpServer *mcpserver.MCPServer, logger *slo
 	return nil
 }
 
-func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr string, logger *slog.Logger) error {
-	httpServer := mcpserver.NewStreamableHTTPServer(mcpServer)
+func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr, bearerToken string, logger *slog.Logger) error {
+	streamable := mcpserver.NewStreamableHTTPServer(mcpServer)
+
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", streamable)
+
+	var handler http.Handler = mux
+	handler = bearerAuthMiddleware(handler, bearerToken)
+
+	srv := &http.Server{Addr: addr, Handler: handler}
 
 	logger.Info("serving MCP over HTTP", slog.String("addr", addr))
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := httpServer.Start(addr); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 	}()
@@ -222,7 +237,7 @@ func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr string,
 		logger.Info("shutting down HTTP server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("http shutdown: %w", err)
 		}
 	case err := <-errCh:
@@ -231,6 +246,19 @@ func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr string,
 
 	logger.Info("shutdown complete")
 	return nil
+}
+
+func bearerAuthMiddleware(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const prefix = "Bearer "
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, prefix) ||
+			subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, prefix)), []byte(token)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func parseFlags(args []string) (config.Overrides, error) {
@@ -248,7 +276,11 @@ func parseFlags(args []string) (config.Overrides, error) {
 	policyFile := fs.String("policy-file", "", "Path to policy YAML file (overrides POLICY_FILE env)")
 	transport := fs.String("transport", "", "Transport: stdio or http (overrides TRANSPORT env)")
 	httpAddr := fs.String("http-addr", "", "HTTP listen address, e.g. :8080 (overrides HTTP_ADDR env)")
+	httpBearerToken := fs.String("http-bearer-token", "", "Bearer token for HTTP auth (overrides HTTP_BEARER_TOKEN env)")
 	otel := fs.Bool("otel", false, "Enable OpenTelemetry tracing and metrics")
+	poolMaxConns := fs.Int("pool-max-conns", 0, "Max pool connections (overrides POOL_MAX_CONNS env)")
+	poolMinConns := fs.Int("pool-min-conns", -1, "Min pool connections (overrides POOL_MIN_CONNS env)")
+	poolMaxConnLifetime := fs.Duration("pool-max-conn-lifetime", 0, "Max connection lifetime (overrides POOL_MAX_CONN_LIFETIME env)")
 
 	if err := fs.Parse(args); err != nil {
 		return config.Overrides{}, err
@@ -285,7 +317,21 @@ func parseFlags(args []string) (config.Overrides, error) {
 	if *httpAddr != "" {
 		overrides.HTTPAddr = httpAddr
 	}
+	if *httpBearerToken != "" {
+		overrides.HTTPBearerToken = httpBearerToken
+	}
 	overrides.OTelEnabled = *otel
+	if *poolMaxConns != 0 {
+		v := int32(*poolMaxConns)
+		overrides.PoolMaxConns = &v
+	}
+	if *poolMinConns >= 0 {
+		v := int32(*poolMinConns)
+		overrides.PoolMinConns = &v
+	}
+	if *poolMaxConnLifetime != 0 {
+		overrides.PoolMaxConnLifetime = poolMaxConnLifetime
+	}
 
 	return overrides, nil
 }
@@ -301,6 +347,7 @@ func printResolvedConfig(cfg *config.Config) {
 	fmt.Fprintf(os.Stderr, "  transport:     %s\n", cfg.Transport)
 	if cfg.Transport == "http" {
 		fmt.Fprintf(os.Stderr, "  http_addr:     %s\n", cfg.HTTPAddr)
+		fmt.Fprintf(os.Stderr, "  http_bearer_token: ***\n")
 	}
 	if cfg.PolicyFile != "" {
 		fmt.Fprintf(os.Stderr, "  policy_file:   %s\n", cfg.PolicyFile)
@@ -308,6 +355,9 @@ func printResolvedConfig(cfg *config.Config) {
 	if len(cfg.Schemas) > 0 {
 		fmt.Fprintf(os.Stderr, "  schemas:       %v\n", cfg.Schemas)
 	}
+	fmt.Fprintf(os.Stderr, "  pool_max_conns:        %d\n", cfg.PoolMaxConns)
+	fmt.Fprintf(os.Stderr, "  pool_min_conns:        %d\n", cfg.PoolMinConns)
+	fmt.Fprintf(os.Stderr, "  pool_max_conn_lifetime: %s\n", cfg.PoolMaxConnLifetime)
 	if cfg.OTelEnabled {
 		fmt.Fprintf(os.Stderr, "  otel:          enabled\n")
 	}
