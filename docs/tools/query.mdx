@@ -54,8 +54,22 @@ The exact fields depend on the columns in your query.
 - **Timeout** — queries are cancelled after `QUERY_TIMEOUT` (default: 10s).
 - **Single statement** — multi-statement queries (separated by `;`) are rejected.
 
+## Column masking
+
+If a [policy file](/features/policy-engine) defines column masks, masked columns are automatically transformed before results are returned. For example, with `email` masked as `redact`:
+
+```json
+[
+  {"id": 1, "email": "***", "name": "Alice"},
+  {"id": 2, "email": "***", "name": "Bob"}
+]
+```
+
+Masking is applied after query execution and is not bypassable — the AI never sees unmasked values. See [Column Masking](/features/column-masking) for all mask types and configuration.
+
 ## Notes
 
 - If `--explain-only` mode is enabled, `query` calls automatically return the `EXPLAIN` plan instead of executing the query.
 - Column values are JSON-serialized: timestamps become ISO 8601 strings, UUIDs become strings, numeric types preserve precision.
+- Masked columns may change type (e.g. an integer column with `mask: "redact"` returns the string `"***"`).
 - For large tables, always use `LIMIT` and filter with `WHERE` to avoid hitting the row cap or timeout.

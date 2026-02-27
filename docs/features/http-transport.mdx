@@ -1,0 +1,140 @@
+---
+title: "HTTP Transport"
+description: "Serve MCP over HTTP instead of stdio — for web-based clients, remote access, and multi-session architectures."
+---
+
+By default, Isthmus communicates with AI clients over **stdio** (standard input/output). This is the simplest setup — the MCP client launches Isthmus as a subprocess and pipes JSON back and forth.
+
+HTTP transport is an alternative that serves MCP over a network socket using the [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) transport. This enables clients that don't support stdio, remote access scenarios, and multi-session architectures.
+
+## When to use HTTP transport
+
+| Scenario | Transport |
+|---|---|
+| Claude Desktop, Cursor, Windsurf, Gemini CLI | stdio (default) |
+| Web-based MCP clients | HTTP |
+| Remote access (Isthmus on a server, client elsewhere) | HTTP |
+| Multiple concurrent clients sharing one Isthmus instance | HTTP |
+| ChatGPT Desktop | HTTP |
+| Custom integrations via HTTP API | HTTP |
+
+Most users should stick with stdio. Use HTTP when your client requires it or when you need network access.
+
+## Enabling HTTP transport
+
+Set the `TRANSPORT` environment variable to `http`:
+
+```bash
+TRANSPORT=http DATABASE_URL=postgres://user:pass@localhost:5432/mydb isthmus
+```
+
+Or use the `--transport` CLI flag:
+
+```bash
+isthmus --transport http
+```
+
+Isthmus will start an HTTP server and log the listen address:
+
+```
+{"level":"INFO","msg":"serving MCP over HTTP","addr":":8080"}
+```
+
+## Configuration
+
+| Option | Env var | CLI flag | Default | Description |
+|---|---|---|---|---|
+| Transport | `TRANSPORT` | `--transport` | `stdio` | Transport mode: `stdio` or `http` |
+| HTTP address | `HTTP_ADDR` | `--http-addr` | `:8080` | Listen address for HTTP transport |
+
+### Custom listen address
+
+To change the port or bind to a specific interface:
+
+```bash
+TRANSPORT=http HTTP_ADDR=:3000 isthmus
+```
+
+```bash
+# Bind to localhost only (reject external connections)
+isthmus --transport http --http-addr 127.0.0.1:8080
+```
+
+```bash
+# Bind to all interfaces on port 3000
+isthmus --transport http --http-addr 0.0.0.0:3000
+```
+
+## MCP client configuration
+
+### Clients that support HTTP
+
+For MCP clients that support the Streamable HTTP transport, point them at the Isthmus HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+### Running Isthmus separately
+
+With HTTP transport, Isthmus runs as a standalone process — not as a subprocess of the MCP client. Start it in a terminal or as a system service:
+
+```bash
+# Terminal
+TRANSPORT=http DATABASE_URL=postgres://user:pass@localhost:5432/mydb isthmus
+
+# Or with all options
+isthmus \
+  --transport http \
+  --http-addr :8080 \
+  --audit-log /var/log/isthmus-audit.ndjson \
+  --policy-file ./policy.yaml
+```
+
+Then configure your MCP client to connect to the HTTP endpoint.
+
+## Streamable HTTP
+
+Isthmus uses the **Streamable HTTP** transport from the MCP specification. This is a modern HTTP-based transport that supports:
+
+- Standard HTTP request/response for tool calls
+- Server-Sent Events (SSE) for streaming responses
+- Session management for stateful interactions
+
+This is the transport specified in the [MCP 2025-03-26 specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http).
+
+## Graceful shutdown
+
+The HTTP server shuts down gracefully on `SIGTERM` or `SIGINT`:
+
+1. Stops accepting new connections
+2. Waits up to 5 seconds for in-flight requests to complete
+3. Closes the listener
+
+```
+{"level":"INFO","msg":"shutting down HTTP server"}
+{"level":"INFO","msg":"shutdown complete"}
+```
+
+## Feature parity
+
+HTTP and stdio transports have **full feature parity**. All MCP tools, policy engine, column masking, SQL validation, audit logging, and OpenTelemetry work identically regardless of transport.
+
+## Security considerations
+
+When using HTTP transport, keep in mind:
+
+- **Bind to localhost** (`127.0.0.1`) in development to prevent external access
+- **Do not expose Isthmus to the public internet** without authentication — the HTTP transport does not include authentication or authorization
+- **Use a reverse proxy** (nginx, Caddy, Envoy) if you need TLS, authentication, or rate limiting
+- All other safety layers (SQL validation, read-only transactions, row limits, column masking) still apply regardless of transport
+
+<Warning>
+  HTTP transport opens a network port. Unlike stdio, where the MCP client launches Isthmus as a subprocess with no network exposure, HTTP makes Isthmus accessible to any process that can reach the listen address. Always bind to `127.0.0.1` unless you specifically need remote access.
+</Warning>

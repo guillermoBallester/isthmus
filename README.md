@@ -63,25 +63,33 @@ See the [quickstart guide](https://isthmus.dev/quickstart) for step-by-step setu
 
 - **Schema discovery** — explore schemas, tables, columns, foreign keys, and indexes ([docs](https://isthmus.dev/tools/overview))
 - **Read-only queries** — execute SQL with server-side row limits and query timeouts ([docs](https://isthmus.dev/tools/query))
+- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/features/column-masking))
 - **Table profiler** — column statistics, cardinality, sample rows, index usage ([docs](https://isthmus.dev/tools/profile-table))
 - **Policy engine** — enrich your schema with business context so the AI writes better SQL ([docs](https://isthmus.dev/features/policy-engine))
 - **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/configuration))
-- **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code ([client setup](https://isthmus.dev/clients/claude-desktop))
+- **HTTP transport** — serve MCP over HTTP for web-based clients, ChatGPT Desktop, and remote access ([docs](https://isthmus.dev/features/http-transport))
+- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/features/opentelemetry))
+- **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code, ChatGPT Desktop ([client setup](https://isthmus.dev/clients/claude-desktop))
 
 ## How it works
 
 ```
-  Claude / Cursor / VS Code
-       │
-       │ stdio (MCP)
-       ▼
-  ┌──────────┐         ┌────────────┐
-  │ isthmus  │────────▶│ PostgreSQL │
-  └──────────┘         └────────────┘
-    your machine          any host
+  Claude / Cursor / VS Code          ChatGPT / Web clients
+       │                                    │
+       │ stdio (MCP)                        │ HTTP (MCP)
+       ▼                                    ▼
+  ┌─────────────────────────────────────────────┐
+  │                  isthmus                    │
+  └─────────────────────┬───────────────────────┘
+                        │
+                        ▼
+                  ┌────────────┐
+                  │ PostgreSQL │
+                  └────────────┘
+                    any host
 ```
 
-Isthmus sits between your AI client and your database. It validates every query at the AST level, enforces read-only transactions, and injects server-side row limits — independent of whatever SQL the LLM generates.
+Isthmus sits between your AI client and your database. It validates every query at the AST level, enforces read-only transactions, masks PII columns, and injects server-side row limits — independent of whatever SQL the LLM generates. Supports both stdio and HTTP transports.
 
 ## MCP tools
 
@@ -103,6 +111,7 @@ Visit **[isthmus.dev](https://isthmus.dev)** for the full documentation:
 - [Installation](https://isthmus.dev/installation) — prebuilt binaries, `go install`, Docker
 - [Configuration](https://isthmus.dev/configuration) — env vars, CLI flags, full reference
 - [Client setup](https://isthmus.dev/clients/claude-desktop) — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code
+- [Column masking](https://isthmus.dev/features/column-masking) — PII protection with redact, hash, partial, null
 - [Policy engine](https://isthmus.dev/features/policy-engine) — business context, schema filtering
 - [Tools reference](https://isthmus.dev/tools/overview) — what each tool does and how the AI uses them
 
