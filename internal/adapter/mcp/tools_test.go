@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/guillermoBallester/isthmus/internal/audit"
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
@@ -128,7 +127,7 @@ func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockE
 
 	var querySvc *service.QueryService
 	if executor != nil {
-		querySvc = service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger, nil, nil, nil)
+		querySvc = service.NewQueryService(domain.NewPgQueryValidator(), executor, port.NoopAuditor{}, logger, nil, nil, nil)
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
@@ -362,7 +361,7 @@ func TestSanitizeError_ValidationPassthrough(t *testing.T) {
 		{"empty query", domain.ErrEmptyQuery, "empty query"},
 		{"not allowed", domain.ErrNotAllowed, "only SELECT"},
 		{"multi statement", domain.ErrMultiStatement, "multiple statements"},
-		{"parse error", fmt.Errorf("failed to parse SQL: syntax error"), "failed to parse SQL"},
+		{"parse error", fmt.Errorf("%w: syntax error", domain.ErrParseFailed), "failed to parse SQL"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

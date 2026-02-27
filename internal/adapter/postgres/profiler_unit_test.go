@@ -8,6 +8,7 @@ import (
 )
 
 func TestPgDistinctToAbsolute(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		nDistinct   float64
@@ -27,6 +28,7 @@ func TestPgDistinctToAbsolute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := pgDistinctToAbsolute(tt.nDistinct, tt.rowEstimate)
 			assert.Equal(t, tt.want, got)
 		})
@@ -34,6 +36,7 @@ func TestPgDistinctToAbsolute(t *testing.T) {
 }
 
 func TestParsePgArray(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -52,6 +55,7 @@ func TestParsePgArray(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := parsePgArray(tt.input)
 			assert.Equal(t, tt.want, got)
 		})
@@ -59,6 +63,7 @@ func TestParsePgArray(t *testing.T) {
 }
 
 func TestParsePgFloatArray(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -71,6 +76,7 @@ func TestParsePgFloatArray(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := parsePgFloatArray(tt.input)
 			assert.InDeltaSlice(t, tt.want, got, 0.001)
 		})
@@ -78,6 +84,7 @@ func TestParsePgFloatArray(t *testing.T) {
 }
 
 func TestIsTypeCompatible(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		a, b string
 		want bool
@@ -95,12 +102,14 @@ func TestIsTypeCompatible(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.a+"_"+tt.b, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, isTypeCompatible(tt.a, tt.b))
 		})
 	}
 }
 
 func TestQuoteIdent(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, `"users"`, quoteIdent("users"))
 	assert.Equal(t, `"my table"`, quoteIdent("my table"))
 	assert.Equal(t, `"test""quote"`, quoteIdent(`test"quote`))
@@ -110,30 +119,35 @@ func TestQuoteIdent(t *testing.T) {
 }
 
 func TestSchemaFilter_Empty(t *testing.T) {
+	t.Parallel()
 	clause, args := schemaFilter(nil, "n.nspname", 1)
 	assert.Equal(t, "n.nspname NOT IN ('pg_catalog', 'information_schema')", clause)
 	assert.Nil(t, args)
 }
 
 func TestSchemaFilter_Single(t *testing.T) {
+	t.Parallel()
 	clause, args := schemaFilter([]string{"public"}, "n.nspname", 1)
 	assert.Equal(t, "n.nspname IN ($1)", clause)
 	assert.Equal(t, []any{"public"}, args)
 }
 
 func TestSchemaFilter_Multiple(t *testing.T) {
+	t.Parallel()
 	clause, args := schemaFilter([]string{"public", "app", "sales"}, "s.schema_name", 1)
 	assert.Equal(t, "s.schema_name IN ($1, $2, $3)", clause)
 	assert.Equal(t, []any{"public", "app", "sales"}, args)
 }
 
 func TestSchemaFilter_ParamOffset(t *testing.T) {
+	t.Parallel()
 	clause, args := schemaFilter([]string{"public", "app"}, "t.table_schema", 3)
 	assert.Equal(t, "t.table_schema IN ($3, $4)", clause)
 	assert.Equal(t, []any{"public", "app"}, args)
 }
 
 func TestParsePgArray_EscapedBrace(t *testing.T) {
+	t.Parallel()
 	// Outer } is stripped by TrimSuffix, so the escaped char is consumed by brace stripping.
 	// Input after brace stripping: hello\  → escape consumes nothing useful → "hello".
 	got := parsePgArray(`{hello\}`)
@@ -141,27 +155,32 @@ func TestParsePgArray_EscapedBrace(t *testing.T) {
 }
 
 func TestParsePgArray_ConsecutiveCommas(t *testing.T) {
+	t.Parallel()
 	// Consecutive commas produce empty strings (not NULL-filtered).
 	got := parsePgArray("{a,,b}")
 	assert.Equal(t, []string{"a", "", "b"}, got)
 }
 
 func TestParsePgArray_AllNULL(t *testing.T) {
+	t.Parallel()
 	got := parsePgArray("{NULL,NULL}")
 	assert.Nil(t, got)
 }
 
 func TestParsePgFloatArray_InvalidValues(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{0.5,notanumber,0.3}")
 	assert.InDeltaSlice(t, []float64{0.5, 0.3}, got, 0.001)
 }
 
 func TestParsePgFloatArray_WithNULL(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{0.1,NULL,0.9}")
 	assert.InDeltaSlice(t, []float64{0.1, 0.9}, got, 0.001)
 }
 
 func TestParsePgFloatArray_LargeValues(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{1e10,0.0000001}")
 	require.Len(t, got, 2)
 	assert.InDelta(t, 1e10, got[0], 1)
@@ -169,23 +188,27 @@ func TestParsePgFloatArray_LargeValues(t *testing.T) {
 }
 
 func TestIsTypeCompatible_MixedCase(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("INTEGER", "bigint"))
 	assert.True(t, isTypeCompatible("Uuid", "UUID"))
 	assert.True(t, isTypeCompatible("TEXT", "varchar"))
 }
 
 func TestIsTypeCompatible_SerialTypes(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("serial", "integer"))
 	assert.True(t, isTypeCompatible("bigserial", "bigint"))
 	assert.True(t, isTypeCompatible("smallserial", "smallint"))
 }
 
 func TestIsTypeCompatible_VarcharCompat(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("varchar", "text"))
 	assert.True(t, isTypeCompatible("character varying", "varchar"))
 }
 
 func TestIsTypeCompatible_UnknownTypes(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("jsonb", "jsonb"))
 	assert.False(t, isTypeCompatible("jsonb", "json"))
 }

@@ -16,6 +16,7 @@ import (
 )
 
 func TestNewFileAuditor_CreatesFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
@@ -26,11 +27,13 @@ func TestNewFileAuditor_CreatesFile(t *testing.T) {
 }
 
 func TestNewFileAuditor_InvalidPath(t *testing.T) {
+	t.Parallel()
 	_, err := NewFileAuditor("/nonexistent/dir/audit.jsonl")
 	require.Error(t, err)
 }
 
 func TestFileAuditor_Record_WritesNDJSON(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
@@ -58,6 +61,7 @@ func TestFileAuditor_Record_WritesNDJSON(t *testing.T) {
 }
 
 func TestFileAuditor_Record_WithError(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
@@ -80,6 +84,7 @@ func TestFileAuditor_Record_WithError(t *testing.T) {
 }
 
 func TestFileAuditor_Record_MultipleEntries(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
@@ -108,6 +113,7 @@ func TestFileAuditor_Record_MultipleEntries(t *testing.T) {
 }
 
 func TestFileAuditor_Record_ConcurrentWrites(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	fa, err := NewFileAuditor(path)
 	require.NoError(t, err)
@@ -141,6 +147,7 @@ func TestFileAuditor_Record_ConcurrentWrites(t *testing.T) {
 }
 
 func TestFileAuditor_Append(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 
 	// First auditor writes one entry.
@@ -168,7 +175,8 @@ func TestFileAuditor_Append(t *testing.T) {
 }
 
 func TestNoopAuditor(t *testing.T) {
-	a := NoopAuditor{}
+	t.Parallel()
+	a := port.NoopAuditor{}
 	a.Record(context.Background(), port.AuditEntry{Tool: "query", SQL: "SELECT 1"})
 	assert.NoError(t, a.Close())
 }

@@ -12,6 +12,7 @@ var (
 	ErrEmptyQuery     = errors.New("empty query")
 	ErrNotAllowed     = errors.New("only SELECT queries are allowed")
 	ErrMultiStatement = errors.New("multiple statements are not allowed")
+	ErrParseFailed    = errors.New("failed to parse SQL")
 )
 
 // PgQueryValidator validates SQL statements using PostgreSQL's actual parser.
@@ -31,7 +32,7 @@ func (v *PgQueryValidator) Validate(sql string) error {
 
 	tree, err := pg_query.Parse(trimmed)
 	if err != nil {
-		return fmt.Errorf("failed to parse SQL: %w", err)
+		return fmt.Errorf("%w: %w", ErrParseFailed, err)
 	}
 
 	if len(tree.Stmts) == 0 {

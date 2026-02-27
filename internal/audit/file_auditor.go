@@ -62,9 +62,3 @@ func (a *FileAuditor) Close() error {
 	defer a.mu.Unlock()
 	return a.file.Close()
 }
-
-// NoopAuditor discards all audit entries.
-type NoopAuditor struct{}
-
-func (NoopAuditor) Record(context.Context, port.AuditEntry) {}
-func (NoopAuditor) Close() error                            { return nil }

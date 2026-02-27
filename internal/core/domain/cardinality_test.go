@@ -7,6 +7,7 @@ import (
 )
 
 func TestClassifyByDistinctCount(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		distinctCount int64
@@ -29,6 +30,7 @@ func TestClassifyByDistinctCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := ClassifyByDistinctCount(tt.distinctCount, tt.totalRows)
 			assert.Equal(t, tt.want, got)
 		})

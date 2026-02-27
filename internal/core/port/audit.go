@@ -16,3 +16,9 @@ type QueryAuditor interface {
 	Record(ctx context.Context, entry AuditEntry)
 	Close() error
 }
+
+// NoopAuditor discards all audit entries.
+type NoopAuditor struct{}
+
+func (NoopAuditor) Record(context.Context, AuditEntry) {}
+func (NoopAuditor) Close() error                       { return nil }

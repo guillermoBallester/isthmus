@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"strings"
 
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
@@ -287,16 +286,10 @@ func sanitizeError(logger *slog.Logger, err error, operation string) string {
 
 // isValidationError returns true for errors we control and are safe to show to clients.
 func isValidationError(err error) bool {
-	if errors.Is(err, domain.ErrEmptyQuery) ||
+	return errors.Is(err, domain.ErrEmptyQuery) ||
 		errors.Is(err, domain.ErrNotAllowed) ||
-		errors.Is(err, domain.ErrMultiStatement) {
-		return true
-	}
-	// Parse errors from pg_query are also validation-level (they come from our validator).
-	if strings.Contains(err.Error(), "failed to parse SQL") {
-		return true
-	}
-	return false
+		errors.Is(err, domain.ErrMultiStatement) ||
+		errors.Is(err, domain.ErrParseFailed)
 }
 
 // isTimeoutError returns true for timeout-related errors at any level.
