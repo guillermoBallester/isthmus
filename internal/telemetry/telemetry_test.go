@@ -14,6 +14,7 @@ import (
 )
 
 func TestNoopTracer(t *testing.T) {
+	t.Parallel()
 	tracer := NoopTracer()
 	assert.NotNil(t, tracer)
 
@@ -23,6 +24,7 @@ func TestNoopTracer(t *testing.T) {
 }
 
 func TestNoopInstruments(t *testing.T) {
+	t.Parallel()
 	inst := NoopInstruments()
 	assert.NotNil(t, inst)
 	assert.NotNil(t, inst.QueryCount)
@@ -36,12 +38,14 @@ func TestNoopInstruments(t *testing.T) {
 }
 
 func TestProvider_Shutdown_Nil(t *testing.T) {
+	t.Parallel()
 	var p *Provider
 	err := p.Shutdown(context.Background())
 	assert.NoError(t, err)
 }
 
 func TestSpanRecording(t *testing.T) {
+	t.Parallel()
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
@@ -60,6 +64,7 @@ func TestSpanRecording(t *testing.T) {
 }
 
 func TestMetricRecording(t *testing.T) {
+	t.Parallel()
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	meter := mp.Meter("test")

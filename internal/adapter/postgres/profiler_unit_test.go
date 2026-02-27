@@ -168,16 +168,19 @@ func TestParsePgArray_AllNULL(t *testing.T) {
 }
 
 func TestParsePgFloatArray_InvalidValues(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{0.5,notanumber,0.3}")
 	assert.InDeltaSlice(t, []float64{0.5, 0.3}, got, 0.001)
 }
 
 func TestParsePgFloatArray_WithNULL(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{0.1,NULL,0.9}")
 	assert.InDeltaSlice(t, []float64{0.1, 0.9}, got, 0.001)
 }
 
 func TestParsePgFloatArray_LargeValues(t *testing.T) {
+	t.Parallel()
 	got := parsePgFloatArray("{1e10,0.0000001}")
 	require.Len(t, got, 2)
 	assert.InDelta(t, 1e10, got[0], 1)
@@ -185,23 +188,27 @@ func TestParsePgFloatArray_LargeValues(t *testing.T) {
 }
 
 func TestIsTypeCompatible_MixedCase(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("INTEGER", "bigint"))
 	assert.True(t, isTypeCompatible("Uuid", "UUID"))
 	assert.True(t, isTypeCompatible("TEXT", "varchar"))
 }
 
 func TestIsTypeCompatible_SerialTypes(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("serial", "integer"))
 	assert.True(t, isTypeCompatible("bigserial", "bigint"))
 	assert.True(t, isTypeCompatible("smallserial", "smallint"))
 }
 
 func TestIsTypeCompatible_VarcharCompat(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("varchar", "text"))
 	assert.True(t, isTypeCompatible("character varying", "varchar"))
 }
 
 func TestIsTypeCompatible_UnknownTypes(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isTypeCompatible("jsonb", "jsonb"))
 	assert.False(t, isTypeCompatible("jsonb", "json"))
 }
