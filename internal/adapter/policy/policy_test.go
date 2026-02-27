@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,10 +62,10 @@ context:
 	require.NoError(t, err)
 
 	customers := pol.Context.Tables["public.customers"]
-	assert.Equal(t, "redact", customers.Columns["email"].Mask)
+	assert.Equal(t, domain.MaskRedact, customers.Columns["email"].Mask)
 	assert.Equal(t, "Customer email", customers.Columns["email"].Description)
-	assert.Equal(t, "null", customers.Columns["ssn"].Mask)
-	assert.Equal(t, "partial", customers.Columns["phone"].Mask)
+	assert.Equal(t, domain.MaskNull, customers.Columns["ssn"].Mask)
+	assert.Equal(t, domain.MaskPartial, customers.Columns["phone"].Mask)
 	assert.Empty(t, customers.Columns["name"].Mask)
 	assert.Equal(t, "Full name", customers.Columns["name"].Description)
 }
@@ -89,7 +90,7 @@ context:
 	assert.Equal(t, "MRR in cents", users.Columns["mrr"].Description)
 	assert.Empty(t, users.Columns["mrr"].Mask)
 	assert.Equal(t, "User email", users.Columns["email"].Description)
-	assert.Equal(t, "hash", users.Columns["email"].Mask)
+	assert.Equal(t, domain.MaskHash, users.Columns["email"].Mask)
 }
 
 func TestLoadFromFile_InvalidMask(t *testing.T) {
@@ -268,7 +269,7 @@ func TestMaskSpec(t *testing.T) {
 		Tables: map[string]TableContext{
 			"public.users": {
 				Columns: map[string]ColumnContext{
-					"email": {Description: "User email", Mask: "redact"},
+					"email": {Description: "User email", Mask: domain.MaskRedact},
 					"name":  {Description: "Full name"},
 				},
 			},
@@ -281,7 +282,7 @@ func TestMaskSpec(t *testing.T) {
 	}
 
 	spec := MaskSpec(ctx)
-	assert.Equal(t, map[string]string{"email": "redact"}, spec)
+	assert.Equal(t, map[string]domain.MaskType{"email": domain.MaskRedact}, spec)
 }
 
 func TestMaskSpec_Empty(t *testing.T) {
@@ -297,6 +298,49 @@ func TestMaskSpec_Empty(t *testing.T) {
 
 	spec := MaskSpec(ctx)
 	assert.Empty(t, spec)
+}
+
+// --- Conflict detection tests ---
+
+func TestLoadFromFile_ConflictingMasks(t *testing.T) {
+	yaml := `
+context:
+  tables:
+    public.users:
+      columns:
+        email:
+          mask: "redact"
+    public.orders:
+      columns:
+        email:
+          mask: "hash"
+`
+	path := writeTempFile(t, yaml)
+
+	_, err := LoadFromFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflicting masks")
+	assert.Contains(t, err.Error(), "email")
+}
+
+func TestLoadFromFile_SameMaskNoConflict(t *testing.T) {
+	yaml := `
+context:
+  tables:
+    public.users:
+      columns:
+        email:
+          mask: "redact"
+    public.orders:
+      columns:
+        email:
+          mask: "redact"
+`
+	path := writeTempFile(t, yaml)
+
+	pol, err := LoadFromFile(path)
+	require.NoError(t, err)
+	assert.Len(t, pol.Context.Tables, 2)
 }
 
 // --- PolicyExplorer tests ---
@@ -384,7 +428,7 @@ func TestMaskingProfiler(t *testing.T) {
 		},
 	}
 
-	masks := map[string]string{"email": "redact"}
+	masks := map[string]domain.MaskType{"email": domain.MaskRedact}
 	mp := NewMaskingProfiler(inner, masks)
 
 	profile, err := mp.ProfileTable(context.Background(), "public", "users")

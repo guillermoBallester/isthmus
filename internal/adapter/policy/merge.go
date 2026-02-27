@@ -1,6 +1,9 @@
 package policy
 
-import "github.com/guillermoBallester/isthmus/internal/core/port"
+import (
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
+	"github.com/guillermoBallester/isthmus/internal/core/port"
+)
 
 // MergeTableDetail enriches a TableDetail with business context from the policy.
 // YAML descriptions are only applied when the existing Postgres comment is empty,
@@ -39,8 +42,8 @@ func MergeTableInfoList(tables []port.TableInfo, ctx ContextConfig) {
 }
 
 // MaskSpec extracts a column-name → mask-type map from the policy for use in query masking.
-func MaskSpec(ctx ContextConfig) map[string]string {
-	spec := make(map[string]string)
+func MaskSpec(ctx ContextConfig) map[string]domain.MaskType {
+	spec := make(map[string]domain.MaskType)
 	for _, tc := range ctx.Tables {
 		for col, cc := range tc.Columns {
 			if cc.Mask != "" {

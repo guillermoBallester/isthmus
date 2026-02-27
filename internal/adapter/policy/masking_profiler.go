@@ -10,11 +10,11 @@ import (
 // MaskingProfiler decorates a SchemaProfiler to mask SampleRows in profile results.
 type MaskingProfiler struct {
 	inner port.SchemaProfiler
-	masks map[string]string // column-name → mask-type
+	masks map[string]domain.MaskType
 }
 
 // NewMaskingProfiler wraps an existing SchemaProfiler with column masking.
-func NewMaskingProfiler(inner port.SchemaProfiler, masks map[string]string) *MaskingProfiler {
+func NewMaskingProfiler(inner port.SchemaProfiler, masks map[string]domain.MaskType) *MaskingProfiler {
 	return &MaskingProfiler{inner: inner, masks: masks}
 }
 
