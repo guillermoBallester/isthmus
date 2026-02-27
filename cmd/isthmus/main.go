@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/adapter/mcp"
 	"github.com/guillermoBallester/isthmus/internal/adapter/policy"
@@ -18,8 +19,10 @@ import (
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
+	"github.com/guillermoBallester/isthmus/internal/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"go.opentelemetry.io/otel"
 )
 
 var version = "dev"
@@ -49,6 +52,7 @@ func run() error {
 		slog.Bool("read_only", cfg.ReadOnly),
 		slog.Int("max_rows", cfg.MaxRows),
 		slog.String("query_timeout", cfg.QueryTimeout.String()),
+		slog.String("transport", cfg.Transport),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -66,12 +70,16 @@ func run() error {
 		return nil
 	}
 
-	explorer, err := buildExplorer(pool, cfg, logger)
+	explorer, masks, err := buildExplorer(pool, cfg, logger)
 	if err != nil {
 		return err
 	}
 	executor := buildExecutor(pool, cfg, logger)
-	profiler := postgres.NewProfiler(pool, cfg.Schemas)
+
+	var profiler port.SchemaProfiler = postgres.NewProfiler(pool, cfg.Schemas)
+	if len(masks) > 0 {
+		profiler = policy.NewMaskingProfiler(profiler, masks)
+	}
 
 	auditor, closeAuditor, err := buildAuditor(cfg, logger)
 	if err != nil {
@@ -79,7 +87,23 @@ func run() error {
 	}
 	defer closeAuditor()
 
-	return serve(ctx, version, explorer, executor, profiler, auditor, logger)
+	var otelProvider *telemetry.Provider
+	if cfg.OTelEnabled {
+		otelProvider, err = telemetry.Init(ctx, "isthmus", version)
+		if err != nil {
+			return fmt.Errorf("initializing otel: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
+				logger.Error("shutting down otel", slog.String("error", err.Error()))
+			}
+		}()
+		logger.Info("opentelemetry enabled")
+	}
+
+	return serve(ctx, cfg, version, explorer, executor, profiler, masks, auditor, logger)
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {
@@ -97,19 +121,24 @@ func connectDB(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) (port.SchemaExplorer, error) {
+func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) (port.SchemaExplorer, map[string]string, error) {
 	var explorer port.SchemaExplorer = postgres.NewExplorer(pool, cfg.Schemas)
+	var masks map[string]string
 
 	if cfg.PolicyFile != "" {
 		pol, err := policy.LoadFromFile(cfg.PolicyFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading policy: %w", err)
+			return nil, nil, fmt.Errorf("loading policy: %w", err)
 		}
 		explorer = policy.NewPolicyExplorer(explorer, pol)
+		masks = policy.MaskSpec(pol.Context)
 		logger.Info("policy loaded", slog.String("file", cfg.PolicyFile))
+		if len(masks) > 0 {
+			logger.Info("column masking enabled", slog.Int("masked_columns", len(masks)))
+		}
 	}
 
-	return explorer, nil
+	return explorer, masks, nil
 }
 
 func buildExecutor(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) port.QueryExecutor {
@@ -143,16 +172,63 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 	return fa, closeFn, nil
 }
 
-func serve(ctx context.Context, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, auditor port.QueryAuditor, logger *slog.Logger) error {
+func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]string, auditor port.QueryAuditor, logger *slog.Logger) error {
 	validator := domain.NewPgQueryValidator()
 	querySvc := service.NewQueryService(validator, executor, auditor, logger)
+	querySvc.SetMasks(masks)
 
-	mcpServer := mcp.NewServer(ver, explorer, profiler, querySvc, logger)
+	var tracer = telemetry.NoopTracer()
+	var inst = telemetry.NoopInstruments()
+	if cfg.OTelEnabled {
+		tracer = otel.Tracer("github.com/guillermoBallester/isthmus")
+		inst = telemetry.NewInstruments()
+		querySvc.SetTelemetry(tracer, inst)
+	}
+
+	mcpServer := mcp.NewServer(ver, explorer, profiler, querySvc, logger, tracer, inst)
+
+	switch cfg.Transport {
+	case "http":
+		return serveHTTP(ctx, mcpServer, cfg.HTTPAddr, logger)
+	default:
+		return serveStdio(ctx, mcpServer, logger)
+	}
+}
+
+func serveStdio(ctx context.Context, mcpServer *mcpserver.MCPServer, logger *slog.Logger) error {
 	stdioServer := mcpserver.NewStdioServer(mcpServer)
 
 	logger.Info("serving MCP over stdio")
 	if err := stdioServer.Listen(ctx, os.Stdin, os.Stdout); err != nil {
 		return fmt.Errorf("stdio server: %w", err)
+	}
+
+	logger.Info("shutdown complete")
+	return nil
+}
+
+func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr string, logger *slog.Logger) error {
+	httpServer := mcpserver.NewStreamableHTTPServer(mcpServer)
+
+	logger.Info("serving MCP over HTTP", slog.String("addr", addr))
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := httpServer.Start(addr); err != nil {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		logger.Info("shutting down HTTP server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("http shutdown: %w", err)
+		}
+	case err := <-errCh:
+		return fmt.Errorf("http server: %w", err)
 	}
 
 	logger.Info("shutdown complete")
@@ -172,6 +248,9 @@ func parseFlags(args []string) (config.Overrides, error) {
 	maxRows := fs.Int("max-rows", 0, "Maximum rows returned per query (overrides MAX_ROWS env)")
 	queryTimeout := fs.Duration("query-timeout", 0, "Query timeout duration, e.g. 30s (overrides QUERY_TIMEOUT env)")
 	policyFile := fs.String("policy-file", "", "Path to policy YAML file (overrides POLICY_FILE env)")
+	transport := fs.String("transport", "", "Transport: stdio or http (overrides TRANSPORT env)")
+	httpAddr := fs.String("http-addr", "", "HTTP listen address, e.g. :8080 (overrides HTTP_ADDR env)")
+	otel := fs.Bool("otel", false, "Enable OpenTelemetry tracing and metrics")
 
 	if err := fs.Parse(args); err != nil {
 		return config.Overrides{}, err
@@ -202,6 +281,13 @@ func parseFlags(args []string) (config.Overrides, error) {
 	if *policyFile != "" {
 		overrides.PolicyFile = policyFile
 	}
+	if *transport != "" {
+		overrides.Transport = transport
+	}
+	if *httpAddr != "" {
+		overrides.HTTPAddr = httpAddr
+	}
+	overrides.OTelEnabled = *otel
 
 	return overrides, nil
 }
@@ -214,11 +300,18 @@ func printResolvedConfig(cfg *config.Config) {
 	fmt.Fprintf(os.Stderr, "  max_rows:      %d\n", cfg.MaxRows)
 	fmt.Fprintf(os.Stderr, "  query_timeout: %s\n", cfg.QueryTimeout)
 	fmt.Fprintf(os.Stderr, "  log_level:     %s\n", cfg.LogLevel)
+	fmt.Fprintf(os.Stderr, "  transport:     %s\n", cfg.Transport)
+	if cfg.Transport == "http" {
+		fmt.Fprintf(os.Stderr, "  http_addr:     %s\n", cfg.HTTPAddr)
+	}
 	if cfg.PolicyFile != "" {
 		fmt.Fprintf(os.Stderr, "  policy_file:   %s\n", cfg.PolicyFile)
 	}
 	if len(cfg.Schemas) > 0 {
 		fmt.Fprintf(os.Stderr, "  schemas:       %v\n", cfg.Schemas)
+	}
+	if cfg.OTelEnabled {
+		fmt.Fprintf(os.Stderr, "  otel:          enabled\n")
 	}
 }
 

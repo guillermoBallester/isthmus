@@ -17,6 +17,9 @@ type Config struct {
 	Schemas      []string // empty means all non-system schemas
 	PolicyFile   string   // optional path to policy YAML
 	LogLevel     slog.Level
+	Transport    string // "stdio" (default) or "http"
+	HTTPAddr     string // listen address for HTTP transport (default ":8080")
+	OTelEnabled  bool   // enable OpenTelemetry tracing and metrics
 
 	// CLI-only fields (not settable via env vars).
 	DryRun      bool
@@ -32,6 +35,9 @@ type Overrides struct {
 	MaxRows      *int
 	QueryTimeout *time.Duration
 	PolicyFile   *string
+	Transport    *string
+	HTTPAddr     *string
+	OTelEnabled  bool
 	DryRun       bool
 	ExplainOnly  bool
 	AuditLog     string
@@ -43,6 +49,8 @@ func Load(overrides Overrides) (*Config, error) {
 		ReadOnly:     true,
 		MaxRows:      100,
 		QueryTimeout: 10 * time.Second,
+		Transport:    "stdio",
+		HTTPAddr:     ":8080",
 	}
 
 	if v := os.Getenv("READ_ONLY"); v != "" {
@@ -88,6 +96,20 @@ func Load(overrides Overrides) (*Config, error) {
 
 	cfg.PolicyFile = os.Getenv("POLICY_FILE")
 
+	if v := os.Getenv("TRANSPORT"); v != "" {
+		cfg.Transport = v
+	}
+	if v := os.Getenv("HTTP_ADDR"); v != "" {
+		cfg.HTTPAddr = v
+	}
+	if v := os.Getenv("OTEL_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid OTEL_ENABLED value %q: %w", v, err)
+		}
+		cfg.OTelEnabled = b
+	}
+
 	// CLI flag overrides (take precedence over env vars).
 	if overrides.DatabaseURL != nil {
 		cfg.DatabaseURL = *overrides.DatabaseURL
@@ -115,10 +137,23 @@ func Load(overrides Overrides) (*Config, error) {
 	if overrides.PolicyFile != nil {
 		cfg.PolicyFile = *overrides.PolicyFile
 	}
+	if overrides.Transport != nil {
+		cfg.Transport = *overrides.Transport
+	}
+	if overrides.HTTPAddr != nil {
+		cfg.HTTPAddr = *overrides.HTTPAddr
+	}
+
+	switch cfg.Transport {
+	case "stdio", "http":
+	default:
+		return nil, fmt.Errorf("invalid TRANSPORT value %q: must be \"stdio\" or \"http\"", cfg.Transport)
+	}
 
 	cfg.DryRun = overrides.DryRun
 	cfg.ExplainOnly = overrides.ExplainOnly
 	cfg.AuditLog = overrides.AuditLog
+	cfg.OTelEnabled = cfg.OTelEnabled || overrides.OTelEnabled
 
 	return cfg, nil
 }

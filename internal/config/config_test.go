@@ -218,6 +218,9 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.False(t, cfg.DryRun)
 	assert.False(t, cfg.ExplainOnly)
 	assert.Empty(t, cfg.AuditLog)
+	assert.Equal(t, "stdio", cfg.Transport)
+	assert.Equal(t, ":8080", cfg.HTTPAddr)
+	assert.False(t, cfg.OTelEnabled)
 }
 
 func TestLoad_QueryTimeoutOverride(t *testing.T) {
@@ -227,4 +230,70 @@ func TestLoad_QueryTimeoutOverride(t *testing.T) {
 	cfg, err := Load(Overrides{QueryTimeout: &timeout})
 	require.NoError(t, err)
 	assert.Equal(t, 500*time.Millisecond, cfg.QueryTimeout)
+}
+
+func TestLoad_TransportDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "stdio", cfg.Transport)
+	assert.Equal(t, ":8080", cfg.HTTPAddr)
+}
+
+func TestLoad_TransportHTTP(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("TRANSPORT", "http")
+	t.Setenv("HTTP_ADDR", ":9090")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "http", cfg.Transport)
+	assert.Equal(t, ":9090", cfg.HTTPAddr)
+}
+
+func TestLoad_TransportInvalid(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("TRANSPORT", "grpc")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "TRANSPORT")
+}
+
+func TestLoad_TransportOverride(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	transport := "http"
+	httpAddr := ":3000"
+	cfg, err := Load(Overrides{Transport: &transport, HTTPAddr: &httpAddr})
+	require.NoError(t, err)
+	assert.Equal(t, "http", cfg.Transport)
+	assert.Equal(t, ":3000", cfg.HTTPAddr)
+}
+
+func TestLoad_OTelEnabled(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("OTEL_ENABLED", "true")
+
+	cfg, err := Load(Overrides{})
+	require.NoError(t, err)
+	assert.True(t, cfg.OTelEnabled)
+}
+
+func TestLoad_OTelEnabledOverride(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+
+	cfg, err := Load(Overrides{OTelEnabled: true})
+	require.NoError(t, err)
+	assert.True(t, cfg.OTelEnabled)
+}
+
+func TestLoad_OTelEnabledInvalid(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("OTEL_ENABLED", "nope")
+
+	_, err := Load(Overrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OTEL_ENABLED")
 }

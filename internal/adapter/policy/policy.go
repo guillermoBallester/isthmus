@@ -1,8 +1,13 @@
 package policy
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Policy holds operator-controlled configuration loaded from a YAML file.
-// Currently supports data dictionary context; future phases add access rules,
-// column masks, row filters, and query templates.
+// Supports data dictionary context and column-level PII masking.
 type Policy struct {
 	Context ContextConfig `yaml:"context"`
 }
@@ -13,8 +18,45 @@ type ContextConfig struct {
 	Tables map[string]TableContext `yaml:"tables"`
 }
 
-// TableContext provides business descriptions for a table and its columns.
+// TableContext provides business descriptions and masking rules for a table and its columns.
 type TableContext struct {
-	Description string            `yaml:"description"`
-	Columns     map[string]string `yaml:"columns"`
+	Description string                   `yaml:"description"`
+	Columns     map[string]ColumnContext `yaml:"columns"`
+}
+
+// ColumnContext holds a column's business description and optional mask directive.
+type ColumnContext struct {
+	Description string `yaml:"description"`
+	Mask        string `yaml:"mask,omitempty"` // "", "redact", "hash", "partial", "null"
+}
+
+// UnmarshalYAML supports both the new struct format and the legacy plain-string format.
+//
+//	columns:
+//	  email: "User email"           # legacy: plain string → ColumnContext{Description: "User email"}
+//	  ssn:                          # new: struct with optional mask
+//	    description: "SSN"
+//	    mask: "redact"
+func (cc *ColumnContext) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		cc.Description = value.Value
+		return nil
+	}
+	// Decode as struct (avoid infinite recursion by using an alias type).
+	type alias ColumnContext
+	var a alias
+	if err := value.Decode(&a); err != nil {
+		return fmt.Errorf("decoding column context: %w", err)
+	}
+	*cc = ColumnContext(a)
+	return nil
+}
+
+// ValidMaskTypes is the set of allowed mask values.
+var ValidMaskTypes = map[string]bool{
+	"":        true,
+	"redact":  true,
+	"hash":    true,
+	"partial": true,
+	"null":    true,
 }

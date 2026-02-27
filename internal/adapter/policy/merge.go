@@ -21,8 +21,8 @@ func MergeTableDetail(detail *port.TableDetail, ctx ContextConfig) {
 	}
 
 	for i, col := range detail.Columns {
-		if desc, ok := tc.Columns[col.Name]; ok && col.Comment == "" {
-			detail.Columns[i].Comment = desc
+		if cc, ok := tc.Columns[col.Name]; ok && col.Comment == "" && cc.Description != "" {
+			detail.Columns[i].Comment = cc.Description
 		}
 	}
 }
@@ -36,4 +36,17 @@ func MergeTableInfoList(tables []port.TableInfo, ctx ContextConfig) {
 			tables[i].Comment = tc.Description
 		}
 	}
+}
+
+// MaskSpec extracts a column-name → mask-type map from the policy for use in query masking.
+func MaskSpec(ctx ContextConfig) map[string]string {
+	spec := make(map[string]string)
+	for _, tc := range ctx.Tables {
+		for col, cc := range tc.Columns {
+			if cc.Mask != "" {
+				spec[col] = cc.Mask
+			}
+		}
+	}
+	return spec
 }

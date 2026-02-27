@@ -31,9 +31,12 @@ func validate(pol *Policy) error {
 		if key == "" {
 			return fmt.Errorf("context.tables contains an empty key")
 		}
-		for col := range tc.Columns {
+		for col, cc := range tc.Columns {
 			if col == "" {
 				return fmt.Errorf("context.tables[%q].columns contains an empty key", key)
+			}
+			if !ValidMaskTypes[cc.Mask] {
+				return fmt.Errorf("context.tables[%q].columns[%q].mask: invalid value %q (allowed: redact, hash, partial, null)", key, col, cc.Mask)
 			}
 		}
 	}
