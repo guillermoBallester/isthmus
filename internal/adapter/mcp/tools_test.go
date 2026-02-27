@@ -13,6 +13,7 @@ import (
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -131,7 +132,7 @@ func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockE
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
-	RegisterTools(s, explorer, prof, querySvc)
+	RegisterTools(s, explorer, prof, querySvc, logger)
 	return s
 }
 
@@ -158,7 +159,7 @@ func TestListSchemas_Error(t *testing.T) {
 
 	result := callTool(t, s, "list_schemas", nil)
 	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "permission denied")
+	assert.Contains(t, toolText(result), "internal error")
 }
 
 func TestListTables_HappyPath(t *testing.T) {
@@ -224,7 +225,7 @@ func TestDescribeTable_Error(t *testing.T) {
 
 	result := callTool(t, s, "describe_table", map[string]any{"table_name": "nonexistent"})
 	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "table not found")
+	assert.Contains(t, toolText(result), "internal error")
 }
 
 func TestProfileTable_HappyPath(t *testing.T) {
@@ -274,7 +275,7 @@ func TestProfileTable_Error(t *testing.T) {
 
 	result := callTool(t, s, "profile_table", map[string]any{"table_name": "nonexistent"})
 	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "table not found")
+	assert.Contains(t, toolText(result), "internal error")
 }
 
 func TestQuery_HappyPath(t *testing.T) {
@@ -306,7 +307,7 @@ func TestQuery_ExecutorError(t *testing.T) {
 
 	result := callTool(t, s, "query", map[string]any{"sql": "SELECT 1"})
 	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "connection timeout")
+	assert.Contains(t, toolText(result), "internal error")
 }
 
 func TestExplainQuery_HappyPath(t *testing.T) {
@@ -346,4 +347,56 @@ func TestExplainQuery_MissingSQL(t *testing.T) {
 	result := callTool(t, s, "explain_query", map[string]any{})
 	assert.True(t, result.IsError)
 	assert.Contains(t, toolText(result), "sql is required")
+}
+
+// --- sanitizeError tests ---
+
+func TestSanitizeError_ValidationPassthrough(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	tests := []struct {
+		name     string
+		err      error
+		contains string
+	}{
+		{"empty query", domain.ErrEmptyQuery, "empty query"},
+		{"not allowed", domain.ErrNotAllowed, "only SELECT"},
+		{"multi statement", domain.ErrMultiStatement, "multiple statements"},
+		{"parse error", fmt.Errorf("failed to parse SQL: syntax error"), "failed to parse SQL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := sanitizeError(logger, tt.err, "query")
+			assert.Contains(t, msg, tt.contains)
+		})
+	}
+}
+
+func TestSanitizeError_Timeout(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	msg := sanitizeError(logger, context.DeadlineExceeded, "query")
+	assert.Contains(t, msg, "query timed out")
+
+	pgErr := &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}
+	msg = sanitizeError(logger, pgErr, "query")
+	assert.Contains(t, msg, "query timed out")
+}
+
+func TestSanitizeError_Generic(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	msg := sanitizeError(logger, fmt.Errorf("unexpected pg error: relation OID 12345"), "describe table")
+	assert.Contains(t, msg, "internal error")
+	assert.Contains(t, msg, "check server logs")
+	assert.NotContains(t, msg, "OID")
+}
+
+func TestQuery_ValidationErrorPassthrough(t *testing.T) {
+	executor := &mockExecutor{}
+	s := setupServer(&mockExplorer{}, nil, executor)
+
+	result := callTool(t, s, "query", map[string]any{"sql": "DROP TABLE users"})
+	assert.True(t, result.IsError)
+	assert.Contains(t, toolText(result), "only SELECT queries are allowed")
 }

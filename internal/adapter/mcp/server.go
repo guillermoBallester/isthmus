@@ -18,7 +18,7 @@ func NewServer(version string, explorer port.SchemaExplorer, profiler port.Schem
 		server.WithHooks(ToolCallHooks(logger, tracer, inst)),
 	)
 
-	RegisterTools(s, explorer, profiler, query)
+	RegisterTools(s, explorer, profiler, query, logger)
 
 	return s
 }
