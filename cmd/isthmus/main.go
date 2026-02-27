@@ -106,7 +106,7 @@ func run() error {
 		logger.Info("opentelemetry enabled")
 	}
 
-	return serve(ctx, cfg, version, explorer, executor, profiler, masks, auditor, logger)
+	return serve(ctx, cfg, version, pool, explorer, executor, profiler, masks, auditor, logger)
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {
@@ -179,7 +179,7 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 	return fa, closeFn, nil
 }
 
-func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
+func serve(ctx context.Context, cfg *config.Config, ver string, pool *pgxpool.Pool, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
 	var tracer = telemetry.NoopTracer()
 	var inst port.Instrumentation = port.NoopInstrumentation{}
 	if cfg.OTelEnabled {
@@ -194,7 +194,7 @@ func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.Sc
 
 	switch cfg.Transport {
 	case "http":
-		return serveHTTP(ctx, mcpServer, cfg.HTTPAddr, cfg.HTTPBearerToken, logger)
+		return serveHTTP(ctx, mcpServer, cfg.HTTPAddr, cfg.HTTPBearerToken, pool, logger)
 	default:
 		return serveStdio(ctx, mcpServer, logger)
 	}
@@ -212,16 +212,23 @@ func serveStdio(ctx context.Context, mcpServer *mcpserver.MCPServer, logger *slo
 	return nil
 }
 
-func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr, bearerToken string, logger *slog.Logger) error {
+func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr, bearerToken string, pool *pgxpool.Pool, logger *slog.Logger) error {
 	streamable := mcpserver.NewStreamableHTTPServer(mcpServer)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", streamable)
+	mux.Handle("/mcp", bearerAuthMiddleware(streamable, bearerToken))
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/ready", readyHandler(pool))
 
-	var handler http.Handler = mux
-	handler = bearerAuthMiddleware(handler, bearerToken)
+	handler := recoveryMiddleware(mux, logger)
 
-	srv := &http.Server{Addr: addr, Handler: handler}
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
 	logger.Info("serving MCP over HTTP", slog.String("addr", addr))
 
@@ -246,6 +253,32 @@ func serveHTTP(ctx context.Context, mcpServer *mcpserver.MCPServer, addr, bearer
 
 	logger.Info("shutdown complete")
 	return nil
+}
+
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func readyHandler(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := pool.Ping(r.Context()); err != nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func recoveryMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error("panic recovered", slog.Any("panic", rec), slog.String("path", r.URL.Path))
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func bearerAuthMiddleware(next http.Handler, token string) http.Handler {
