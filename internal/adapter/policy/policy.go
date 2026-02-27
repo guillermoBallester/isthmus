@@ -3,6 +3,7 @@ package policy
 import (
 	"fmt"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,8 +27,8 @@ type TableContext struct {
 
 // ColumnContext holds a column's business description and optional mask directive.
 type ColumnContext struct {
-	Description string `yaml:"description"`
-	Mask        string `yaml:"mask,omitempty"` // "", "redact", "hash", "partial", "null"
+	Description string          `yaml:"description"`
+	Mask        domain.MaskType `yaml:"mask,omitempty"`
 }
 
 // UnmarshalYAML supports both the new struct format and the legacy plain-string format.
@@ -50,13 +51,4 @@ func (cc *ColumnContext) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*cc = ColumnContext(a)
 	return nil
-}
-
-// ValidMaskTypes is the set of allowed mask values.
-var ValidMaskTypes = map[string]bool{
-	"":        true,
-	"redact":  true,
-	"hash":    true,
-	"partial": true,
-	"null":    true,
 }

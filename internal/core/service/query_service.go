@@ -32,25 +32,21 @@ type QueryService struct {
 	executor  port.QueryExecutor
 	auditor   port.QueryAuditor
 	logger    *slog.Logger
-	masks     map[string]string // column-name → mask-type (nil = no masking)
+	masks     map[string]domain.MaskType // column-name → mask-type (nil = no masking)
 	tracer    trace.Tracer
 	inst      *telemetry.Instruments
 }
 
-func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger) *QueryService {
+func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger, masks map[string]domain.MaskType) *QueryService {
 	return &QueryService{
 		validator: validator,
 		executor:  executor,
 		auditor:   auditor,
 		logger:    logger,
+		masks:     masks,
 		tracer:    telemetry.NoopTracer(),
 		inst:      telemetry.NoopInstruments(),
 	}
-}
-
-// SetMasks configures column-level masking rules (column-name → mask-type).
-func (s *QueryService) SetMasks(masks map[string]string) {
-	s.masks = masks
 }
 
 // SetTelemetry configures OTel tracing and metrics for the service.

@@ -127,7 +127,7 @@ func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockE
 
 	var querySvc *service.QueryService
 	if executor != nil {
-		querySvc = service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger)
+		querySvc = service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger, nil)
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))

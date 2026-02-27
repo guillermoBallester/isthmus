@@ -121,9 +121,9 @@ func connectDB(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) (port.SchemaExplorer, map[string]string, error) {
+func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) (port.SchemaExplorer, map[string]domain.MaskType, error) {
 	var explorer port.SchemaExplorer = postgres.NewExplorer(pool, cfg.Schemas)
-	var masks map[string]string
+	var masks map[string]domain.MaskType
 
 	if cfg.PolicyFile != "" {
 		pol, err := policy.LoadFromFile(cfg.PolicyFile)
@@ -172,10 +172,9 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 	return fa, closeFn, nil
 }
 
-func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]string, auditor port.QueryAuditor, logger *slog.Logger) error {
+func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
 	validator := domain.NewPgQueryValidator()
-	querySvc := service.NewQueryService(validator, executor, auditor, logger)
-	querySvc.SetMasks(masks)
+	querySvc := service.NewQueryService(validator, executor, auditor, logger, masks)
 
 	var tracer = telemetry.NoopTracer()
 	var inst = telemetry.NoopInstruments()

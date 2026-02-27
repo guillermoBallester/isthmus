@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,6 +28,12 @@ func LoadFromFile(path string) (*Policy, error) {
 }
 
 func validate(pol *Policy) error {
+	type maskOrigin struct {
+		mask  domain.MaskType
+		table string
+	}
+	seen := make(map[string]maskOrigin)
+
 	for key, tc := range pol.Context.Tables {
 		if key == "" {
 			return fmt.Errorf("context.tables contains an empty key")
@@ -35,9 +42,19 @@ func validate(pol *Policy) error {
 			if col == "" {
 				return fmt.Errorf("context.tables[%q].columns contains an empty key", key)
 			}
-			if !ValidMaskTypes[cc.Mask] {
+			if !cc.Mask.Valid() {
 				return fmt.Errorf("context.tables[%q].columns[%q].mask: invalid value %q (allowed: redact, hash, partial, null)", key, col, cc.Mask)
 			}
+			if cc.Mask == "" {
+				continue
+			}
+			if prev, exists := seen[col]; exists && prev.mask != cc.Mask {
+				return fmt.Errorf(
+					"column %q has conflicting masks: %q in %s vs %q in %s",
+					col, prev.mask, prev.table, cc.Mask, key,
+				)
+			}
+			seen[col] = maskOrigin{cc.Mask, key}
 		}
 	}
 	return nil
