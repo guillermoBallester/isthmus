@@ -8,8 +8,12 @@
 
 <p align="center">
   <a href="https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml"><img src="https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://goreportcard.com/report/github.com/guillermoBallester/isthmus"><img src="https://goreportcard.com/badge/github.com/guillermoBallester/isthmus" alt="Go Report Card" /></a>
+  <a href="https://codecov.io/gh/guillermoBallester/isthmus"><img src="https://codecov.io/gh/guillermoBallester/isthmus/branch/main/graph/badge.svg" alt="Codecov" /></a>
+  <a href="https://github.com/guillermoBallester/isthmus/releases/latest"><img src="https://img.shields.io/github/v/release/guillermoBallester/isthmus?label=release" alt="Latest Release" /></a>
+  <a href="https://github.com/guillermoBallester/isthmus/stargazers"><img src="https://img.shields.io/github/stars/guillermoBallester/isthmus" alt="GitHub Stars" /></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
-  <a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-12+-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
+
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-2025--03--26-blueviolet" alt="MCP" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
 </p>
