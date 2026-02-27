@@ -30,6 +30,7 @@ func NoopInstruments() *Instruments {
 }
 
 func newInstrumentsFromMeter(meter metric.Meter) *Instruments {
+	// OTel SDK returns noop instruments on error; safe to discard.
 	queryCount, _ := meter.Int64Counter("isthmus.query.count",
 		metric.WithDescription("Total number of SQL queries executed"),
 	)
