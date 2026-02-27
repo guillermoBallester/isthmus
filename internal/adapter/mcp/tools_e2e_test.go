@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/adapter/postgres"
-	"github.com/guillermoBallester/isthmus/internal/audit"
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/guillermoBallester/isthmus/internal/core/service"
@@ -129,7 +128,7 @@ func setupE2E(t *testing.T) *server.MCPServer {
 
 	// Real services.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	querySvc := service.NewQueryService(domain.NewPgQueryValidator(), executor, audit.NoopAuditor{}, logger, nil, nil, nil)
+	querySvc := service.NewQueryService(domain.NewPgQueryValidator(), executor, port.NoopAuditor{}, logger, nil, nil, nil)
 
 	// Real MCP server.
 	s := server.NewMCPServer("test-e2e", "0.0.1", server.WithToolCapabilities(true))

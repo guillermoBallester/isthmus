@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
-	"github.com/guillermoBallester/isthmus/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -35,15 +35,15 @@ type QueryService struct {
 	logger    *slog.Logger
 	masks     map[string]domain.MaskType // column-name → mask-type (nil = no masking)
 	tracer    trace.Tracer
-	inst      *telemetry.Instruments
+	inst      port.Instrumentation
 }
 
-func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger, masks map[string]domain.MaskType, tracer trace.Tracer, inst *telemetry.Instruments) *QueryService {
+func NewQueryService(validator port.QueryValidator, executor port.QueryExecutor, auditor port.QueryAuditor, logger *slog.Logger, masks map[string]domain.MaskType, tracer trace.Tracer, inst port.Instrumentation) *QueryService {
 	if tracer == nil {
-		tracer = telemetry.NoopTracer()
+		tracer = trace.NewNoopTracerProvider().Tracer("noop")
 	}
 	if inst == nil {
-		inst = telemetry.NoopInstruments()
+		inst = port.NoopInstrumentation{}
 	}
 	return &QueryService{
 		validator: validator,
@@ -75,15 +75,15 @@ func (s *QueryService) Execute(ctx context.Context, sql string) ([]map[string]an
 		)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		s.inst.QueryErrors.Add(ctx, 1)
-		return nil, err
+		s.inst.IncrementQueryErrors(ctx)
+		return nil, fmt.Errorf("validation: %w", err)
 	}
 
 	start := time.Now()
 	results, err := s.executor.Execute(ctx, sql)
 	durationMS := time.Since(start).Milliseconds()
 
-	s.inst.QueryDuration.Record(ctx, float64(durationMS))
+	s.inst.RecordQueryDuration(ctx, float64(durationMS))
 
 	s.auditor.Record(ctx, port.AuditEntry{
 		Tool:         toolNameFromCtx(ctx),
@@ -96,11 +96,11 @@ func (s *QueryService) Execute(ctx context.Context, sql string) ([]map[string]an
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		s.inst.QueryErrors.Add(ctx, 1)
+		s.inst.IncrementQueryErrors(ctx)
 		return results, err
 	}
 
-	s.inst.QueryCount.Add(ctx, 1)
+	s.inst.IncrementQueryCount(ctx)
 	span.SetAttributes(attribute.Int("db.response.rows", len(results)))
 	domain.MaskRows(results, s.masks)
 

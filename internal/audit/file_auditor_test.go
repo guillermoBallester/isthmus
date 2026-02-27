@@ -168,7 +168,7 @@ func TestFileAuditor_Append(t *testing.T) {
 }
 
 func TestNoopAuditor(t *testing.T) {
-	a := NoopAuditor{}
+	a := port.NoopAuditor{}
 	a.Record(context.Background(), port.AuditEntry{Tool: "query", SQL: "SELECT 1"})
 	assert.NoError(t, a.Close())
 }

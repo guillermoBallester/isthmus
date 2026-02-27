@@ -9,6 +9,7 @@ import (
 var errAny = errors.New("any error")
 
 func TestQueryValidator_Validate(t *testing.T) {
+	t.Parallel()
 	v := NewPgQueryValidator()
 
 	tests := []struct {
@@ -70,6 +71,7 @@ func TestQueryValidator_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := v.Validate(tt.sql)
 			if tt.wantErr == nil {
 				if err != nil {

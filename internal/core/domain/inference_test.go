@@ -7,6 +7,7 @@ import (
 )
 
 func TestMatchFKNamingPattern(t *testing.T) {
+	t.Parallel()
 	tables := map[string]bool{
 		"users":      true,
 		"products":   true,
@@ -33,6 +34,7 @@ func TestMatchFKNamingPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			candidate, ok := MatchFKNamingPattern(tt.column, tables)
 			assert.Equal(t, tt.wantMatch, ok)
 			if ok {

@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"context"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -52,4 +54,20 @@ func newInstrumentsFromMeter(meter metric.Meter) *Instruments {
 		QueryErrors:   queryErrors,
 		ToolDuration:  toolDuration,
 	}
+}
+
+func (i *Instruments) RecordQueryDuration(ctx context.Context, ms float64) {
+	i.QueryDuration.Record(ctx, ms)
+}
+
+func (i *Instruments) IncrementQueryCount(ctx context.Context) {
+	i.QueryCount.Add(ctx, 1)
+}
+
+func (i *Instruments) IncrementQueryErrors(ctx context.Context) {
+	i.QueryErrors.Add(ctx, 1)
+}
+
+func (i *Instruments) RecordToolDuration(ctx context.Context, ms float64) {
+	i.ToolDuration.Record(ctx, ms)
 }

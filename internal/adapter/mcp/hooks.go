@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/guillermoBallester/isthmus/internal/telemetry"
+	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,7 +22,7 @@ type callState struct {
 }
 
 // ToolCallHooks creates MCP hooks that log tool calls and optionally record OTel spans/metrics.
-func ToolCallHooks(logger *slog.Logger, tracer trace.Tracer, inst *telemetry.Instruments) *server.Hooks {
+func ToolCallHooks(logger *slog.Logger, tracer trace.Tracer, inst port.Instrumentation) *server.Hooks {
 	hooks := &server.Hooks{}
 	var calls sync.Map // id -> *callState
 
@@ -67,7 +67,7 @@ func ToolCallHooks(logger *slog.Logger, tracer trace.Tracer, inst *telemetry.Ins
 		)
 
 		if inst != nil {
-			inst.ToolDuration.Record(ctx, float64(duration.Milliseconds()))
+			inst.RecordToolDuration(ctx, float64(duration.Milliseconds()))
 		}
 
 		if span != nil {

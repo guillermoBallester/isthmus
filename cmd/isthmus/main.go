@@ -161,7 +161,7 @@ func buildExecutor(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) 
 
 func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, func(), error) {
 	if cfg.AuditLog == "" {
-		return audit.NoopAuditor{}, func() {}, nil
+		return port.NoopAuditor{}, func() {}, nil
 	}
 
 	fa, err := audit.NewFileAuditor(cfg.AuditLog)
@@ -181,7 +181,7 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 
 func serve(ctx context.Context, cfg *config.Config, ver string, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
 	var tracer = telemetry.NoopTracer()
-	var inst = telemetry.NoopInstruments()
+	var inst port.Instrumentation = port.NoopInstrumentation{}
 	if cfg.OTelEnabled {
 		tracer = otel.Tracer("github.com/guillermoBallester/isthmus")
 		inst = telemetry.NewInstruments()
