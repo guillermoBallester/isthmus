@@ -9,12 +9,16 @@ import (
 
 	"github.com/guillermoBallester/isthmus/internal/core/domain"
 	"github.com/guillermoBallester/isthmus/internal/core/port"
+	"github.com/jackc/pgx/v5"
 )
 
 func (e *Explorer) fetchTableComment(ctx context.Context, schema, tableName string) (string, error) {
 	var comment string
 	err := e.pool.QueryRow(ctx, queryTableComment, schema, tableName).Scan(&comment)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("table %q %w in schema %q", tableName, domain.ErrNotFound, schema)
+		}
 		return "", fmt.Errorf("table %q not found in schema %q: %w", tableName, schema, err)
 	}
 	return comment, nil
@@ -30,10 +34,13 @@ func (e *Explorer) fetchTableMeta(ctx context.Context, tableName string) (schema
 
 	err = e.pool.QueryRow(ctx, query, args...).Scan(&schema, &comment)
 	if err != nil {
-		if len(e.schemas) > 0 {
-			return "", "", fmt.Errorf("table %q not found in schemas %v: %w", tableName, e.schemas, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			if len(e.schemas) > 0 {
+				return "", "", fmt.Errorf("table %q %w in schemas %v", tableName, domain.ErrNotFound, e.schemas)
+			}
+			return "", "", fmt.Errorf("table %q %w", tableName, domain.ErrNotFound)
 		}
-		return "", "", fmt.Errorf("table %q not found: %w", tableName, err)
+		return "", "", fmt.Errorf("querying table metadata for %q: %w", tableName, err)
 	}
 	return schema, comment, nil
 }
