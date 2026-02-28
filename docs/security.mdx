@@ -59,7 +59,40 @@ The `--audit-log` flag writes every executed query to an NDJSON file with timest
 
 See [Audit Logging](/features/audit-logging) for details.
 
-### 10. Observability
+### 10. Bearer authentication (HTTP transport)
+
+When using the [HTTP transport](/features/http-transport), Isthmus requires a bearer token on every request to the `/mcp` endpoint. Isthmus refuses to start in HTTP mode without a token configured, preventing accidental unauthenticated exposure.
+
+Key implementation details:
+
+- **Constant-time comparison** — tokens are compared using `crypto/subtle.ConstantTimeCompare`, which prevents timing attacks that could leak the token byte-by-byte
+- **Mandatory token** — the server refuses to start if `HTTP_BEARER_TOKEN` is empty when `TRANSPORT=http`
+- **Health endpoints excluded** — `/health` and `/ready` are unauthenticated so container orchestrators can probe them without credentials
+
+See [HTTP Transport](/features/http-transport) for configuration details.
+
+### 11. Error sanitization
+
+Isthmus wraps all database errors before returning them to the AI model. Raw PostgreSQL error messages — which can contain table names, constraint definitions, internal IP addresses, or schema details — are never exposed directly. Instead, errors are wrapped with a generic context prefix:
+
+| Error source | What the AI sees |
+|---|---|
+| Query validation failure | `"query failed: only SELECT queries are allowed"` |
+| Query execution error | `"query failed: ..."` (wrapped, not raw PG error) |
+| Table not found | `"failed to describe table: ..."` |
+| Schema listing failure | `"failed to list schemas: ..."` |
+
+This prevents information disclosure through error messages — a common OWASP risk where database internals leak through stack traces or verbose error responses.
+
+### 12. Credential redaction
+
+Database credentials are never logged or displayed in plaintext:
+
+- **Structured logs** — the `DATABASE_URL` is never included in `slog` log output
+- **Dry-run output** — when `--dry-run` prints the resolved configuration, the password in the connection string is replaced with `***` using Go's `net/url` parser (e.g. `postgres://user:***@localhost:5432/mydb`)
+- **Error messages** — connection failures do not include the full DSN
+
+### 13. Observability
 
 OpenTelemetry tracing and metrics (`--otel`) let you monitor query latency, error rates, and tool usage in production. Traces include the full SQL statement, row counts, and error details.
 
@@ -99,13 +132,28 @@ postgres://isthmus_reader:strong-random-password@localhost:5432/mydb
 
 ## Security checklist
 
-- [ ] Use a dedicated read-only Postgres role
-- [ ] Set `SCHEMAS` to limit schema discovery
+### Database
+
+- [ ] Use a dedicated read-only Postgres role with minimal privileges
+- [ ] Set `SCHEMAS` to limit schema discovery to only the schemas the AI needs
 - [ ] Set `MAX_ROWS` to a reasonable limit for your use case
-- [ ] Set `QUERY_TIMEOUT` appropriate for your database
-- [ ] Mask PII columns (`email`, `ssn`, `phone`, etc.) in your [policy YAML](/features/column-masking)
-- [ ] Enable `--audit-log` in production
-- [ ] Consider `--explain-only` if the AI should not access actual data
-- [ ] Review the audit log periodically
-- [ ] If using HTTP transport, bind to `127.0.0.1` or use a reverse proxy with TLS
-- [ ] Consider `--otel` for production monitoring of query performance and error rates
+- [ ] Set `QUERY_TIMEOUT` appropriate for your database workload
+
+### Data protection
+
+- [ ] Mask all PII columns (`email`, `ssn`, `phone`, etc.) in your [policy YAML](/features/column-masking)
+- [ ] Consider `--explain-only` if the AI should analyze queries without accessing actual data
+- [ ] Use `redact` mask for highly sensitive columns, `hash` for columns needed in JOINs/GROUP BY
+
+### Monitoring
+
+- [ ] Enable `--audit-log` in production for query forensics
+- [ ] Review the audit log periodically for unexpected queries
+- [ ] Consider `--otel` for real-time monitoring of query latency and error rates
+
+### Network (HTTP transport only)
+
+- [ ] Set a strong, randomly generated `HTTP_BEARER_TOKEN` (at least 32 bytes)
+- [ ] Bind to `127.0.0.1` unless remote access is specifically required
+- [ ] Use TLS (via reverse proxy) to protect the bearer token in transit
+- [ ] Never commit bearer tokens to version control
