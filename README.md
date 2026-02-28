@@ -12,7 +12,7 @@
 
   <a href="https://github.com/guillermoBallester/isthmus/releases/latest"><img src="https://img.shields.io/github/v/release/guillermoBallester/isthmus?label=release" alt="Latest Release" /></a>
   <a href="https://github.com/guillermoBallester/isthmus/stargazers"><img src="https://img.shields.io/github/stars/guillermoBallester/isthmus" alt="GitHub Stars" /></a>
-  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
+  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
 </p>
 
 <p align="center">
