@@ -22,9 +22,20 @@ Isthmus is configured via environment variables, with optional CLI flag override
 | Explain only | — | `--explain-only` | bool | `false` | Force all `query` calls to return EXPLAIN plans instead of results |
 | Transport | `TRANSPORT` | `--transport` | string | `stdio` | Transport mode: `stdio` or `http` ([docs](/features/http-transport)) |
 | HTTP address | `HTTP_ADDR` | `--http-addr` | string | `:8080` | Listen address for [HTTP transport](/features/http-transport), e.g. `:3000`, `127.0.0.1:8080` |
+| Bearer token | `HTTP_BEARER_TOKEN` | `--http-bearer-token` | string | **(required for HTTP)** | Bearer token for authenticating HTTP requests. See [HTTP Transport](/features/http-transport) |
 | Audit log | — | `--audit-log` | string | *(none)* | Path to NDJSON file for [query audit logging](/features/audit-logging) |
 | OpenTelemetry | `OTEL_ENABLED` | `--otel` | bool | `false` | Enable [OpenTelemetry](/features/opentelemetry) tracing and metrics (OTLP gRPC) |
 | Version | — | `--version` | bool | — | Print version and exit |
+
+### Connection pool
+
+| Option | Env var | CLI flag | Type | Default | Description |
+|---|---|---|---|---|---|
+| Max connections | `POOL_MAX_CONNS` | `--pool-max-conns` | int | `5` | Maximum connections in the pool |
+| Min connections | `POOL_MIN_CONNS` | `--pool-min-conns` | int | `1` | Minimum idle connections kept open |
+| Max lifetime | `POOL_MAX_CONN_LIFETIME` | `--pool-max-conn-lifetime` | duration | `30m` | Maximum lifetime of a connection before it is closed and replaced |
+
+Pool settings rarely need tuning. The defaults are appropriate for a single-user local MCP server. Increase `POOL_MAX_CONNS` if you serve multiple concurrent clients over HTTP transport.
 
 ## Example .env file
 
@@ -35,9 +46,19 @@ QUERY_TIMEOUT=30s
 SCHEMAS=public,analytics
 POLICY_FILE=./policy.yaml
 LOG_LEVEL=info
-# TRANSPORT=http        # Uncomment to serve over HTTP instead of stdio
-# HTTP_ADDR=:8080       # HTTP listen address (only used when TRANSPORT=http)
-# OTEL_ENABLED=true     # Uncomment to enable OpenTelemetry
+
+# HTTP transport (uncomment to serve over HTTP instead of stdio)
+# TRANSPORT=http
+# HTTP_ADDR=:8080
+# HTTP_BEARER_TOKEN=your-secret-token-here
+
+# Observability (uncomment to enable)
+# OTEL_ENABLED=true
+
+# Connection pool tuning (defaults are fine for most use cases)
+# POOL_MAX_CONNS=5
+# POOL_MIN_CONNS=1
+# POOL_MAX_CONN_LIFETIME=30m
 ```
 
 ## MCP client configuration

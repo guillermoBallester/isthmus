@@ -250,6 +250,55 @@ Masked values may change type. This is intentional and documented here for compl
 | any | `null` | `null` |
 | `NULL` | any | `null` |
 
+## Choosing the right mask type
+
+| Data type | Example columns | Recommended | Why |
+|---|---|---|---|
+| Credentials | `password_hash`, `api_key`, `token` | `redact` | No reason for the AI to ever see these |
+| Government IDs | `ssn`, `tax_id`, `passport_number` | `redact` or `null` | Highly regulated, zero analytical value |
+| Email addresses | `email`, `contact_email` | `redact` or `hash` | Use `hash` if the AI needs to detect duplicates or join across tables |
+| Phone numbers | `phone`, `mobile`, `fax` | `partial` | Last 4 digits help the AI understand the format (area codes, country codes) |
+| Financial accounts | `card_number`, `iban`, `routing_number` | `partial` | Last 4 digits is industry standard (PCI DSS) |
+| Names | `name`, `first_name`, `last_name` | `hash` or `partial` | `hash` for analytics, `partial` to preserve format |
+| Addresses | `street`, `address_line_1` | `redact` | Low analytical value, high PII risk |
+| Salaries / compensation | `salary`, `bonus`, `equity_grants` | `null` | Sensitive internal data, not useful for most AI queries |
+| Internal identifiers | `user_id`, `account_id` | `hash` | Deterministic — AI can still join and group by without seeing real IDs |
+| Non-sensitive business data | `status`, `category`, `amount_cents` | *(no mask)* | AI needs actual values to provide useful analysis |
+
+## Compliance context
+
+Column masking helps satisfy data protection requirements across common regulatory frameworks:
+
+| Framework | Requirement | How masking helps |
+|---|---|---|
+| **GDPR** | Data minimization (Art. 5(1)(c)) | Mask PII so the AI processes only what's necessary |
+| **HIPAA** | Minimum necessary standard | `redact` or `null` PHI columns (patient names, diagnoses, SSNs) |
+| **PCI DSS** | Mask PAN when displayed (Req. 3.3) | `partial` on card numbers shows only last 4 digits |
+| **SOC 2** | Access controls on sensitive data | Server-side masking enforces data protection regardless of AI behavior |
+| **CCPA** | Limit disclosure of personal information | Mask consumer PII in AI-accessible query results |
+
+<Warning>
+  Column masking is one layer of a data protection strategy — not a complete compliance solution. Combine it with a dedicated read-only database role, schema filtering, audit logging, and your organization's data governance policies.
+</Warning>
+
+## Interaction with other features
+
+| Feature | Interaction with masking |
+|---|---|
+| **Schema filtering** (`SCHEMAS`) | Complementary — filtering hides entire schemas, masking hides column values within visible schemas |
+| **Explain-only mode** (`--explain-only`) | No interaction — EXPLAIN returns query plans, not data, so masking is not applied |
+| **Audit logging** (`--audit-log`) | Audit logs record the SQL statement, not the results — masked values are never written to the audit log because the log captures input, not output |
+| **Business context** (policy descriptions) | Additive — the AI sees the column description ("Primary email address") alongside the masked value (`"***"`), giving it schema understanding without data exposure |
+| **Row limits** (`MAX_ROWS`) | Independent — row limits cap the number of rows, masking transforms values within those rows |
+| **OpenTelemetry** (`--otel`) | Traces record SQL statements and row counts, not result values — masking has no effect on telemetry data |
+
+## Limitations
+
+- **Column name scope** — masks match by column name globally, not per table. You cannot mask `email` differently in `users` vs. `contacts`. This is a deliberate tradeoff: simplicity and predictability over per-table granularity.
+- **SQL aliases** — if a query uses `SELECT email AS contact_email`, the result column is named `contact_email`, and the `email` mask will **not** apply. The AI could theoretically use aliases to bypass masking. Mitigate this with a dedicated read-only database role that restricts access to sensitive columns at the PostgreSQL level.
+- **Aggregations** — `SELECT COUNT(DISTINCT email)` returns an integer count, not email values. Masking does not interfere with aggregations since the masked column is not in the result set.
+- **WHERE clauses** — masking does not affect query filters. `SELECT id FROM users WHERE email = 'alice@example.com'` executes against the real data. The AI can still filter by masked columns — it just cannot see the values in results.
+
 ## Tips
 
 - **Start with `redact`** — it's the safest default for PII columns.
@@ -259,3 +308,4 @@ Masked values may change type. This is intentional and documented here for compl
 - **Masking + business descriptions work together** — the AI sees `"description": "Primary email address"` alongside `"***"`, so it knows *what* the column is without seeing the *values*.
 - **Mask liberally, describe generously** — err on the side of masking more columns. The AI writes better SQL when it understands the schema (via descriptions) than when it sees raw data.
 - **Think about JOINs** — if you mask `email` in one table, mask it in all tables. Isthmus enforces this consistency at startup.
+- **Combine with database-level controls** — for maximum protection, mask columns in the policy YAML *and* revoke `SELECT` on those columns for the database role. This provides defense in depth.

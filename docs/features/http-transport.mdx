@@ -46,6 +46,7 @@ Isthmus will start an HTTP server and log the listen address:
 |---|---|---|---|---|
 | Transport | `TRANSPORT` | `--transport` | `stdio` | Transport mode: `stdio` or `http` |
 | HTTP address | `HTTP_ADDR` | `--http-addr` | `:8080` | Listen address for HTTP transport |
+| Bearer token | `HTTP_BEARER_TOKEN` | `--http-bearer-token` | **(required)** | Bearer token for authenticating HTTP requests |
 
 ### Custom listen address
 
@@ -65,17 +66,110 @@ isthmus --transport http --http-addr 127.0.0.1:8080
 isthmus --transport http --http-addr 0.0.0.0:3000
 ```
 
+## Bearer authentication
+
+When HTTP transport is enabled, Isthmus **requires** a bearer token. Every request to the `/mcp` endpoint must include an `Authorization` header with the token:
+
+```
+Authorization: Bearer <your-token>
+```
+
+### Setting the token
+
+Set the bearer token via environment variable or CLI flag:
+
+```bash
+TRANSPORT=http HTTP_BEARER_TOKEN=my-secret-token isthmus
+```
+
+```bash
+isthmus --transport http --http-bearer-token my-secret-token
+```
+
+Isthmus refuses to start in HTTP mode without a bearer token — this prevents accidentally exposing an unauthenticated MCP endpoint on the network.
+
+### How it works
+
+- The token is compared using **constant-time comparison** (`crypto/subtle.ConstantTimeCompare`) to prevent timing attacks
+- Requests with a missing, malformed, or incorrect `Authorization` header receive `401 Unauthorized`
+- Only the `Bearer` scheme is accepted — `Basic`, `Digest`, and other schemes are rejected
+- Health check endpoints (`/health` and `/ready`) are **not** behind bearer auth — orchestrators need unauthenticated access to these
+
+### Generating a secure token
+
+Use a cryptographically random token:
+
+```bash
+# Generate a 32-byte random token
+openssl rand -hex 32
+```
+
+Store the token securely — treat it like a password. Do not commit it to version control.
+
+## Health check endpoints
+
+When running in HTTP mode, Isthmus exposes two unauthenticated health check endpoints for container orchestrators (Kubernetes, ECS, Docker Compose):
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /health` | None | Liveness probe — returns `200 OK` if the process is running |
+| `GET /ready` | None | Readiness probe — returns `200 OK` if the database pool is healthy, `503 Service Unavailable` otherwise |
+
+```bash
+# Liveness check
+curl http://localhost:8080/health
+# 200 OK
+
+# Readiness check
+curl http://localhost:8080/ready
+# 200 OK (database reachable)
+# 503 Service Unavailable (database unreachable)
+```
+
+### Kubernetes example
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+## Server hardening
+
+The HTTP server includes production-grade timeouts and error handling:
+
+| Setting | Value | Purpose |
+|---|---|---|
+| Read timeout | 30s | Prevents slow-read attacks (slowloris) |
+| Write timeout | 60s | Prevents connection exhaustion from slow clients |
+| Idle timeout | 120s | Cleans up idle keep-alive connections |
+| Panic recovery | Enabled | Handler panics return `500` instead of crashing the server |
+| Graceful shutdown | 5s drain | In-flight requests complete before exit |
+
 ## MCP client configuration
 
 ### Clients that support HTTP
 
-For MCP clients that support the Streamable HTTP transport, point them at the Isthmus HTTP endpoint:
+For MCP clients that support the Streamable HTTP transport, point them at the Isthmus HTTP endpoint with the bearer token in the headers:
 
 ```json
 {
   "mcpServers": {
     "isthmus": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer my-secret-token"
+      }
     }
   }
 }
@@ -87,12 +181,16 @@ With HTTP transport, Isthmus runs as a standalone process — not as a subproces
 
 ```bash
 # Terminal
-TRANSPORT=http DATABASE_URL=postgres://user:pass@localhost:5432/mydb isthmus
+TRANSPORT=http \
+HTTP_BEARER_TOKEN=my-secret-token \
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb \
+isthmus
 
 # Or with all options
 isthmus \
   --transport http \
   --http-addr :8080 \
+  --http-bearer-token my-secret-token \
   --audit-log /var/log/isthmus-audit.ndjson \
   --policy-file ./policy.yaml
 ```
@@ -130,11 +228,12 @@ HTTP and stdio transports have **full feature parity**. All MCP tools, policy en
 
 When using HTTP transport, keep in mind:
 
+- **Bearer auth is mandatory** — Isthmus refuses to start in HTTP mode without a token
 - **Bind to localhost** (`127.0.0.1`) in development to prevent external access
-- **Do not expose Isthmus to the public internet** without authentication — the HTTP transport does not include authentication or authorization
-- **Use a reverse proxy** (nginx, Caddy, Envoy) if you need TLS, authentication, or rate limiting
+- **Use TLS in production** — bearer tokens are sent in plaintext over HTTP. Use a reverse proxy (nginx, Caddy, Envoy) for TLS termination, or tunnel through SSH
+- **Use a reverse proxy** for rate limiting if Isthmus is exposed beyond localhost
 - All other safety layers (SQL validation, read-only transactions, row limits, column masking) still apply regardless of transport
 
 <Warning>
-  HTTP transport opens a network port. Unlike stdio, where the MCP client launches Isthmus as a subprocess with no network exposure, HTTP makes Isthmus accessible to any process that can reach the listen address. Always bind to `127.0.0.1` unless you specifically need remote access.
+  HTTP transport opens a network port. Unlike stdio, where the MCP client launches Isthmus as a subprocess with no network exposure, HTTP makes Isthmus accessible to any process that can reach the listen address. Always bind to `127.0.0.1` unless you specifically need remote access, and always use TLS in production to protect the bearer token in transit.
 </Warning>
