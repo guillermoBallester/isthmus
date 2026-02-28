@@ -1,14 +1,28 @@
-# Isthmus Policy File — Data Dictionary (Context)
+# Isthmus Policy File — Data Dictionary + Column Masking
 #
 # This file enriches MCP tool responses (describe_table, list_tables) with
 # business descriptions so the LLM understands what each table and column means.
+# It also defines column-level masking to protect PII in query results and
+# profile_table sample rows.
 #
 # Usage:
-#   POLICY_FILE=policy.yaml isthmus-agent
+#   POLICY_FILE=policy.yaml isthmus
 #
 # Keys are fully-qualified: schema.table_name
 # YAML descriptions only fill empty comments — Postgres COMMENT ON values
 # always take precedence.
+#
+# Column formats:
+#   column_name: "description"                       # plain description, no masking
+#   column_name:                                     # expanded format with masking
+#     description: "description"
+#     mask: "redact"                                 # redact | hash | partial | null
+#
+# Mask types:
+#   redact  — replaces value with "***"
+#   hash    — deterministic SHA-256 hex (64 chars), preserves GROUP BY / JOIN
+#   partial — shows last 4 characters, masks the rest with asterisks
+#   null    — replaces value with NULL
 
 context:
   tables:
@@ -16,8 +30,18 @@ context:
       description: "Registered platform customers. One row per customer account."
       columns:
         id: "Unique customer identifier (UUID)"
-        email: "Primary email address, used for login and notifications"
-        name: "Full display name"
+        email:
+          description: "Primary email address, used for login and notifications"
+          mask: "redact"
+        name:
+          description: "Full display name"
+          mask: "partial"
+        phone:
+          description: "Contact phone number"
+          mask: "partial"
+        ssn:
+          description: "Social Security Number (US)"
+          mask: "null"
         created_at: "Account creation timestamp (UTC)"
 
     public.orders:
@@ -33,7 +57,9 @@ context:
       description: "Product catalog. Each row is a distinct SKU."
       columns:
         id: "Unique product identifier (UUID)"
-        name: "Product display name"
+        name:
+          description: "Product display name"
+          mask: "partial"
         price_cents: "Unit price in cents (USD)"
         category: "Product category for filtering and reporting"
         stock: "Current inventory count"
