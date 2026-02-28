@@ -79,11 +79,6 @@ func run() error {
 	}
 	executor := buildExecutor(pool, cfg, logger)
 
-	var profiler port.SchemaProfiler = postgres.NewProfiler(pool, cfg.Schemas)
-	if len(masks) > 0 {
-		profiler = policy.NewMaskingProfiler(profiler, masks)
-	}
-
 	auditor, closeAuditor, err := buildAuditor(cfg, logger)
 	if err != nil {
 		return err
@@ -106,7 +101,7 @@ func run() error {
 		logger.Info("opentelemetry enabled")
 	}
 
-	return serve(ctx, cfg, version, pool, explorer, executor, profiler, masks, auditor, logger)
+	return serve(ctx, cfg, version, pool, explorer, executor, masks, auditor, logger)
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {
@@ -137,8 +132,8 @@ func buildExplorer(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger) 
 		if err != nil {
 			return nil, nil, fmt.Errorf("loading policy: %w", err)
 		}
-		explorer = policy.NewPolicyExplorer(explorer, pol)
 		masks = policy.MaskSpec(pol.Context)
+		explorer = policy.NewPolicyExplorer(explorer, pol, masks)
 		logger.Info("policy loaded", slog.String("file", cfg.PolicyFile))
 		if len(masks) > 0 {
 			logger.Info("column masking enabled", slog.Int("masked_columns", len(masks)))
@@ -179,7 +174,7 @@ func buildAuditor(cfg *config.Config, logger *slog.Logger) (port.QueryAuditor, f
 	return fa, closeFn, nil
 }
 
-func serve(ctx context.Context, cfg *config.Config, ver string, pool *pgxpool.Pool, explorer port.SchemaExplorer, executor port.QueryExecutor, profiler port.SchemaProfiler, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
+func serve(ctx context.Context, cfg *config.Config, ver string, pool *pgxpool.Pool, explorer port.SchemaExplorer, executor port.QueryExecutor, masks map[string]domain.MaskType, auditor port.QueryAuditor, logger *slog.Logger) error {
 	var tracer = telemetry.NoopTracer()
 	var inst port.Instrumentation = port.NoopInstrumentation{}
 	if cfg.OTelEnabled {
@@ -190,7 +185,7 @@ func serve(ctx context.Context, cfg *config.Config, ver string, pool *pgxpool.Po
 	validator := domain.NewPgQueryValidator()
 	querySvc := service.NewQueryService(validator, executor, auditor, logger, masks, tracer, inst)
 
-	mcpServer := mcp.NewServer(ver, explorer, profiler, querySvc, logger, tracer, inst)
+	mcpServer := mcp.NewServer(ver, explorer, querySvc, logger, tracer, inst)
 
 	switch cfg.Transport {
 	case "http":

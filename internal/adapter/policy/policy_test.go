@@ -370,12 +370,40 @@ func TestPolicyExplorer_DescribeTable(t *testing.T) {
 		},
 	}
 
-	pe := NewPolicyExplorer(inner, pol)
+	pe := NewPolicyExplorer(inner, pol, nil)
 	detail, err := pe.DescribeTable(context.Background(), "public", "users")
 	require.NoError(t, err)
 
 	assert.Equal(t, "Registered users", detail.Comment)
 	assert.Equal(t, "User email", detail.Columns[1].Comment)
+}
+
+func TestPolicyExplorer_DescribeTable_MasksSampleRows(t *testing.T) {
+	inner := &mockExplorer{
+		describeResult: &port.TableDetail{
+			Schema: "public",
+			Name:   "users",
+			Columns: []port.ColumnInfo{
+				{Name: "id"},
+				{Name: "email"},
+			},
+			SampleRows: []map[string]any{
+				{"id": 1, "email": "alice@example.com"},
+				{"id": 2, "email": "bob@example.com"},
+			},
+		},
+	}
+
+	pol := &Policy{}
+	masks := map[string]domain.MaskType{"email": domain.MaskRedact}
+	pe := NewPolicyExplorer(inner, pol, masks)
+
+	detail, err := pe.DescribeTable(context.Background(), "public", "users")
+	require.NoError(t, err)
+
+	assert.Equal(t, "***", detail.SampleRows[0]["email"])
+	assert.Equal(t, "***", detail.SampleRows[1]["email"])
+	assert.Equal(t, 1, detail.SampleRows[0]["id"])
 }
 
 func TestPolicyExplorer_ListTables(t *testing.T) {
@@ -393,7 +421,7 @@ func TestPolicyExplorer_ListTables(t *testing.T) {
 		},
 	}
 
-	pe := NewPolicyExplorer(inner, pol)
+	pe := NewPolicyExplorer(inner, pol, nil)
 	tables, err := pe.ListTables(context.Background())
 	require.NoError(t, err)
 
@@ -406,7 +434,7 @@ func TestPolicyExplorer_ListSchemas(t *testing.T) {
 	}
 
 	pol := &Policy{}
-	pe := NewPolicyExplorer(inner, pol)
+	pe := NewPolicyExplorer(inner, pol, nil)
 
 	schemas, err := pe.ListSchemas(context.Background())
 	require.NoError(t, err)
@@ -414,45 +442,37 @@ func TestPolicyExplorer_ListSchemas(t *testing.T) {
 	assert.Equal(t, "public", schemas[0].Name)
 }
 
-// --- MaskingProfiler tests ---
-
-func TestMaskingProfiler(t *testing.T) {
-	inner := &mockProfiler{
-		result: &port.TableProfile{
-			Schema: "public",
-			Name:   "users",
-			SampleRows: []map[string]any{
-				{"id": 1, "email": "alice@example.com", "name": "Alice"},
-				{"id": 2, "email": "bob@example.com", "name": "Bob"},
+func TestPolicyExplorer_Discover(t *testing.T) {
+	inner := &mockExplorer{
+		discoverResult: &port.DiscoveryResult{
+			Schemas: []port.SchemaOverview{
+				{
+					Name: "public",
+					Tables: []port.TableInfo{
+						{Schema: "public", Name: "users", Comment: ""},
+						{Schema: "public", Name: "orders", Comment: "Existing"},
+					},
+				},
 			},
 		},
 	}
 
-	masks := map[string]domain.MaskType{"email": domain.MaskRedact}
-	mp := NewMaskingProfiler(inner, masks)
-
-	profile, err := mp.ProfileTable(context.Background(), "public", "users")
-	require.NoError(t, err)
-
-	assert.Equal(t, "***", profile.SampleRows[0]["email"])
-	assert.Equal(t, "***", profile.SampleRows[1]["email"])
-	assert.Equal(t, "Alice", profile.SampleRows[0]["name"])
-}
-
-func TestMaskingProfiler_NoMasks(t *testing.T) {
-	inner := &mockProfiler{
-		result: &port.TableProfile{
-			SampleRows: []map[string]any{
-				{"email": "alice@example.com"},
+	pol := &Policy{
+		Context: ContextConfig{
+			Tables: map[string]TableContext{
+				"public.users":  {Description: "Registered users"},
+				"public.orders": {Description: "Purchase orders"},
 			},
 		},
 	}
 
-	mp := NewMaskingProfiler(inner, nil)
-	profile, err := mp.ProfileTable(context.Background(), "public", "users")
+	pe := NewPolicyExplorer(inner, pol, nil)
+	result, err := pe.Discover(context.Background())
 	require.NoError(t, err)
 
-	assert.Equal(t, "alice@example.com", profile.SampleRows[0]["email"])
+	require.Len(t, result.Schemas, 1)
+	assert.Equal(t, "Registered users", result.Schemas[0].Tables[0].Comment)
+	assert.Equal(t, "Existing", result.Schemas[0].Tables[1].Comment) // not overwritten
 }
 
 // --- helpers ---
@@ -461,6 +481,7 @@ type mockExplorer struct {
 	listSchemasResult []port.SchemaInfo
 	listTablesResult  []port.TableInfo
 	describeResult    *port.TableDetail
+	discoverResult    *port.DiscoveryResult
 }
 
 func (m *mockExplorer) ListSchemas(_ context.Context) ([]port.SchemaInfo, error) {
@@ -475,12 +496,8 @@ func (m *mockExplorer) DescribeTable(_ context.Context, _, _ string) (*port.Tabl
 	return m.describeResult, nil
 }
 
-type mockProfiler struct {
-	result *port.TableProfile
-}
-
-func (m *mockProfiler) ProfileTable(_ context.Context, _, _ string) (*port.TableProfile, error) {
-	return m.result, nil
+func (m *mockExplorer) Discover(_ context.Context) (*port.DiscoveryResult, error) {
+	return m.discoverResult, nil
 }
 
 func writeTempFile(t *testing.T, content string) string {

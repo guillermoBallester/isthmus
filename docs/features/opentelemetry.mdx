@@ -83,7 +83,7 @@ Isthmus emits two types of spans:
 
 ### Query spans
 
-Every SQL query executed through the `query` or `explain_query` tool creates a span:
+Every SQL query executed through the `query` tool creates a span:
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -96,7 +96,7 @@ If the query fails (validation error, execution error), the error is recorded on
 
 ### Tool call spans
 
-Every MCP tool call (`list_schemas`, `describe_table`, `query`, etc.) creates a span:
+Every MCP tool call (`discover`, `describe_table`, `query`) creates a span:
 
 | Attribute | Type | Description |
 |---|---|---|

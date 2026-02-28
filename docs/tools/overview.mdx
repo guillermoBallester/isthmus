@@ -3,33 +3,27 @@ title: "Tools Overview"
 description: "How Isthmus MCP tools work and the recommended discovery workflow."
 ---
 
-Isthmus exposes six MCP tools that AI models call to explore and query your PostgreSQL database. You don't call these tools directly — your AI client (Claude, Cursor, etc.) invokes them automatically based on your questions.
+Isthmus exposes three MCP tools that AI models call to explore and query your PostgreSQL database. You don't call these tools directly — your AI client (Claude, Cursor, etc.) invokes them automatically based on your questions.
 
 ## Recommended discovery workflow
 
 When an AI model connects to your database for the first time, the most effective sequence is:
 
 ```
-1. list_schemas      → What schemas exist?
-2. list_tables       → What tables are in each schema?
-3. describe_table    → What columns, types, keys, and statistics does a table have?
-4. profile_table     → What does the actual data look like? (sample rows, index usage)
-5. query             → Execute a read-only SQL query
-6. explain_query     → Check the execution plan for performance
+1. discover          → What schemas and tables exist? (sizes, row counts, columns)
+2. describe_table    → Full table analysis: columns, types, keys, stats, sample rows, index usage
+3. query             → Execute a read-only SQL query (with optional EXPLAIN plan)
 ```
 
-Most AI models follow this pattern naturally — they start broad and narrow down before writing SQL.
+Most AI models follow this pattern naturally — they start broad with `discover`, narrow down to specific tables with `describe_table`, then write and execute SQL with `query`.
 
 ## Tool summary
 
 | Tool | Purpose | Parameters |
 |---|---|---|
-| [`list_schemas`](/tools/list-schemas) | Discover available schemas | *(none)* |
-| [`list_tables`](/tools/list-tables) | List all tables with sizes and row counts | *(none)* |
-| [`describe_table`](/tools/describe-table) | Full table structure, statistics, keys, indexes | `table_name` (required), `schema` |
-| [`profile_table`](/tools/profile-table) | Deep analysis: sample rows, disk usage, inferred FKs | `table_name` (required), `schema` |
-| [`query`](/tools/query) | Execute read-only SQL | `sql` (required) |
-| [`explain_query`](/tools/explain-query) | Show execution plan | `sql` (required), `analyze` |
+| [`discover`](/tools/discover) | Full database landscape: schemas with nested tables | *(none)* |
+| [`describe_table`](/tools/describe-table) | Complete table analysis: columns, statistics, sample rows, index usage | `table_name` (required), `schema` |
+| [`query`](/tools/query) | Execute read-only SQL with optional EXPLAIN plans | `sql` (required), `explain`, `analyze` |
 
 ## Safety guardrails
 

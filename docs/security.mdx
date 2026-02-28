@@ -33,13 +33,13 @@ Queries are cancelled after `QUERY_TIMEOUT` (default: 10s). This prevents runawa
 
 ### 5. Schema filtering
 
-The `SCHEMAS` environment variable restricts which schemas the AI can discover. Only listed schemas appear in `list_schemas`, `list_tables`, and `describe_table` results.
+The `SCHEMAS` environment variable restricts which schemas the AI can discover. Only listed schemas appear in `discover` and `describe_table` results.
 
 See [Schema Filtering](/features/schema-filtering) for details.
 
 ### 6. Column masking
 
-The policy file supports per-column masking rules (`redact`, `hash`, `partial`, `null`) that protect PII in both `query` results and `profile_table` sample rows. Masking is enforced server-side — the AI cannot bypass it regardless of what SQL it generates.
+The policy file supports per-column masking rules (`redact`, `hash`, `partial`, `null`) that protect PII in both `query` results and `describe_table` sample rows. Masking is enforced server-side — the AI cannot bypass it regardless of what SQL it generates.
 
 See [Column Masking](/features/column-masking) for details.
 

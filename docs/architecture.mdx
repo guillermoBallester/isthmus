@@ -11,11 +11,11 @@ Isthmus follows hexagonal architecture (ports & adapters). The core business log
 cmd/isthmus/               → Binary entrypoint (single binary, stdio + HTTP transports)
 internal/
   core/
-    port/                  → Interfaces: SchemaExplorer, QueryExecutor, SchemaProfiler, QueryAuditor
+    port/                  → Interfaces: SchemaExplorer, QueryExecutor, QueryAuditor
     domain/                → SQL validation (pg_query AST), cardinality, column masking (MaskType)
-    service/               → Application services: ExplorerService, QueryService, ProfilerService
+    service/               → Application services: QueryService
   adapter/
-    mcp/                   → MCP server factory + tool definitions + OTel hooks
+    mcp/                   → MCP server factory + tool definitions (discover, describe_table, query)
     postgres/              → PostgreSQL implementation of ports (pgxpool, information_schema, pg_stats)
   audit/                   → File-based audit logging (NDJSON)
   config/                  → Environment variable + CLI flag loading
@@ -27,24 +27,20 @@ Everything is under `internal/` — Go's convention enforces module privacy. The
 
 ## Ports (interfaces)
 
-The core defines four port interfaces that adapters implement:
+The core defines three port interfaces that adapters implement:
 
 ```go
-// Schema discovery
+// Schema discovery and table analysis
 type SchemaExplorer interface {
     ListSchemas(ctx context.Context) ([]SchemaInfo, error)
     ListTables(ctx context.Context) ([]TableInfo, error)
     DescribeTable(ctx context.Context, schema, tableName string) (*TableDetail, error)
+    Discover(ctx context.Context) (*DiscoveryResult, error)
 }
 
 // SQL execution
 type QueryExecutor interface {
     Execute(ctx context.Context, sql string) ([]map[string]any, error)
-}
-
-// Deep table profiling
-type SchemaProfiler interface {
-    ProfileTable(ctx context.Context, schema, tableName string) (*TableProfile, error)
 }
 
 // Audit trail
@@ -73,21 +69,19 @@ All dependencies are wired at startup in `cmd/isthmus/main.go`. There is no glob
 pool     := postgres.NewPool(ctx, cfg.DatabaseURL)
 explorer := postgres.NewExplorer(pool, cfg.Schemas)
 executor := postgres.NewExecutor(pool, cfg.ReadOnly, cfg.MaxRows, cfg.QueryTimeout)
-profiler := postgres.NewProfiler(pool, cfg.Schemas)
 
 // Optional decorators
 if cfg.PolicyFile != "" {
     pol, _ := policy.LoadFromFile(cfg.PolicyFile)
-    explorer = policy.NewPolicyExplorer(explorer, pol)
+    masks  := policy.MaskSpec(pol.Context)
+    explorer = policy.NewPolicyExplorer(explorer, pol, masks)
 }
 
 // Services
-explorerSvc := service.NewExplorerService(explorer)
-querySvc    := service.NewQueryService(validator, executor, auditor, logger)
-profilerSvc := service.NewProfilerService(profiler)
+querySvc := service.NewQueryService(validator, executor, auditor, logger)
 
 // Server
-mcpServer := mcp.NewServer(ver, explorerSvc, profilerSvc, querySvc, logger)
+mcpServer := mcp.NewServer(ver, explorer, querySvc, logger)
 ```
 
 ## Adding a new database adapter
@@ -95,7 +89,7 @@ mcpServer := mcp.NewServer(ver, explorerSvc, profilerSvc, querySvc, logger)
 To add support for a new database (e.g. MySQL):
 
 1. Create `internal/adapter/mysql/`
-2. Implement `port.SchemaExplorer` and `port.QueryExecutor` (and optionally `port.SchemaProfiler`)
+2. Implement `port.SchemaExplorer` and `port.QueryExecutor`
 3. Wire the new adapter in `cmd/isthmus/main.go` based on the connection string scheme
 4. Add integration tests using testcontainers
 

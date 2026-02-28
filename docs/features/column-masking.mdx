@@ -3,7 +3,7 @@ title: "Column Masking"
 description: "Protect PII and sensitive data with automatic column-level masking — configured in your policy YAML, enforced everywhere."
 ---
 
-Column masking lets you define per-column data protection rules in your policy YAML. Masked columns are automatically redacted, hashed, partially hidden, or nullified in both `query` results and `profile_table` sample rows. No code changes, no database views, no application-layer middleware — just a YAML file.
+Column masking lets you define per-column data protection rules in your policy YAML. Masked columns are automatically redacted, hashed, partially hidden, or nullified in both `query` results and `describe_table` sample rows. No code changes, no database views, no application-layer middleware — just a YAML file.
 
 ## Why column masking?
 
@@ -11,7 +11,7 @@ AI models are powerful data analysts, but they don't need to see raw PII to writ
 
 - **Emails, SSNs, phone numbers** are redacted before the AI ever sees them
 - **Query results** are masked in real time — the AI gets useful structure without sensitive values
-- **Sample rows** in `profile_table` are also masked, so profiling doesn't leak PII
+- **Sample rows** in `describe_table` are also masked, so table analysis doesn't leak PII
 - **Masking is enforced server-side** — the AI cannot bypass it, regardless of what SQL it generates
 
 ## Enabling column masking
@@ -130,9 +130,9 @@ With `email: redact` and `name: hash`:
 ]
 ```
 
-### Profile sample rows
+### Describe table sample rows
 
-The `profile_table` tool returns up to 5 sample rows. These are masked identically — same rules, same mask types:
+The `describe_table` tool returns up to 5 sample rows. These are masked identically — same rules, same mask types:
 
 ```json
 {

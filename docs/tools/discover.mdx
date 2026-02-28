@@ -1,0 +1,107 @@
+---
+title: "discover"
+description: "Discover the full database landscape: all schemas with their tables, sizes, and metadata in a single call."
+---
+
+## Description
+
+Discover the full database landscape in a single call. Returns all schemas with their tables nested inside, including table type, estimated row counts, disk sizes, column counts, index presence, and comments.
+
+Call this first when connecting to a new database. One call gives the AI everything it needs to understand the database structure before diving into specific tables.
+
+## Parameters
+
+*This tool takes no parameters.*
+
+## Response schema
+
+| Field | Type | Description |
+|---|---|---|
+| `schemas` | array | Array of schema overview objects (see below) |
+
+### Schema overview object
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Schema name |
+| `tables` | array | Tables and views in this schema (see below) |
+
+### Table info object
+
+| Field | Type | Description |
+|---|---|---|
+| `schema` | string | Schema name |
+| `name` | string | Table or view name |
+| `type` | string | `"table"` or `"view"` |
+| `row_estimate` | integer | Estimated row count from `pg_class` |
+| `total_bytes` | integer | Total disk size in bytes (omitted for views) |
+| `size_human` | string | Human-readable size, e.g. `"45 MB"` (omitted for views) |
+| `column_count` | integer | Number of columns |
+| `has_indexes` | boolean | Whether the table has any indexes |
+| `comment` | string | Table comment from `COMMENT ON` or policy file (omitted if empty) |
+
+## Example response
+
+```json
+{
+  "schemas": [
+    {
+      "name": "public",
+      "tables": [
+        {
+          "schema": "public",
+          "name": "customers",
+          "type": "table",
+          "row_estimate": 15420,
+          "total_bytes": 2097152,
+          "size_human": "2048 kB",
+          "column_count": 8,
+          "has_indexes": true,
+          "comment": "Registered platform customers. One row per customer account."
+        },
+        {
+          "schema": "public",
+          "name": "orders",
+          "type": "table",
+          "row_estimate": 248000,
+          "total_bytes": 47185920,
+          "size_human": "45 MB",
+          "column_count": 12,
+          "has_indexes": true
+        },
+        {
+          "schema": "public",
+          "name": "order_summary",
+          "type": "view",
+          "row_estimate": 0,
+          "column_count": 5,
+          "has_indexes": false
+        }
+      ]
+    },
+    {
+      "name": "analytics",
+      "tables": [
+        {
+          "schema": "analytics",
+          "name": "events",
+          "type": "table",
+          "row_estimate": 1500000,
+          "total_bytes": 234881024,
+          "size_human": "224 MB",
+          "column_count": 6,
+          "has_indexes": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Notes
+
+- System schemas (`pg_catalog`, `information_schema`, `pg_toast`) are always excluded.
+- When the `SCHEMAS` environment variable is set, only the allowed schemas and their tables are returned. See [Schema Filtering](/features/schema-filtering).
+- Row estimates come from `pg_class.reltuples` and may be stale if `ANALYZE` hasn't run recently.
+- Comments from a [policy file](/features/policy-engine) are merged with Postgres `COMMENT ON` values (Postgres comments take precedence).
+- This is typically the first tool an AI model calls when exploring a new database.

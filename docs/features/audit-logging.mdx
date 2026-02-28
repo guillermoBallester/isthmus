@@ -3,7 +3,7 @@ title: "Audit Logging"
 description: "Track every SQL query executed by the AI with NDJSON audit logs."
 ---
 
-Isthmus can log every query executed through the `query` and `explain_query` tools to an append-only NDJSON (newline-delimited JSON) file. This gives you a full audit trail of what the AI asked your database.
+Isthmus can log every query executed through the `query` tool to an append-only NDJSON (newline-delimited JSON) file. This gives you a full audit trail of what the AI asked your database.
 
 ## Enabling audit logging
 
@@ -38,7 +38,7 @@ Each line is a JSON object with these fields:
 | Field | Type | Description |
 |---|---|---|
 | `ts` | string | Timestamp in RFC 3339 format (UTC) |
-| `tool` | string | Tool name: `"query"` or `"explain_query"` |
+| `tool` | string | Tool name: `"query"` |
 | `sql` | string | The SQL statement that was executed |
 | `rows_returned` | integer | Number of rows in the result |
 | `duration_ms` | integer | Execution time in milliseconds |
@@ -48,7 +48,7 @@ Each line is a JSON object with these fields:
 
 ```json
 {"ts":"2026-02-25T14:30:15Z","tool":"query","sql":"SELECT id, status FROM orders WHERE status = 'paid' LIMIT 10","rows_returned":10,"duration_ms":12,"error":null}
-{"ts":"2026-02-25T14:30:18Z","tool":"explain_query","sql":"EXPLAIN SELECT id, status FROM orders WHERE status = 'paid'","rows_returned":2,"duration_ms":3,"error":null}
+{"ts":"2026-02-25T14:30:18Z","tool":"query","sql":"EXPLAIN SELECT id, status FROM orders WHERE status = 'paid'","rows_returned":2,"duration_ms":3,"error":null}
 {"ts":"2026-02-25T14:31:02Z","tool":"query","sql":"SELECT count(*) FROM orders GROUP BY status","rows_returned":6,"duration_ms":45,"error":null}
 ```
 
@@ -77,5 +77,5 @@ jq -s 'group_by(.sql) | map({sql: .[0].sql, count: length}) | sort_by(-.count) |
 ## Notes
 
 - Audit logging is best-effort — if a write to the log file fails, the query still completes. This ensures audit I/O never blocks your database queries.
-- Only `query` and `explain_query` tool calls are logged. Schema discovery tools (`list_schemas`, `list_tables`, `describe_table`, `profile_table`) are not logged since they don't execute user-supplied SQL.
+- Only `query` tool calls are logged (including queries with `explain: true`). Schema discovery tools (`discover`, `describe_table`) are not logged since they don't execute user-supplied SQL.
 - The log file is opened in append-only mode. Isthmus never truncates or rotates the file — use external log rotation (e.g. `logrotate`) for long-running deployments.

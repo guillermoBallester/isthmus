@@ -23,10 +23,11 @@ import (
 // --- mock SchemaExplorer ---
 
 type mockExplorer struct {
-	schemas []port.SchemaInfo
-	tables  []port.TableInfo
-	detail  *port.TableDetail
-	err     error
+	schemas   []port.SchemaInfo
+	tables    []port.TableInfo
+	detail    *port.TableDetail
+	discovery *port.DiscoveryResult
+	err       error
 }
 
 func (m *mockExplorer) ListSchemas(_ context.Context) ([]port.SchemaInfo, error) {
@@ -41,6 +42,10 @@ func (m *mockExplorer) DescribeTable(_ context.Context, _, _ string) (*port.Tabl
 	return m.detail, m.err
 }
 
+func (m *mockExplorer) Discover(_ context.Context) (*port.DiscoveryResult, error) {
+	return m.discovery, m.err
+}
+
 // --- mock QueryExecutor ---
 
 type mockExecutor struct {
@@ -52,17 +57,6 @@ type mockExecutor struct {
 func (m *mockExecutor) Execute(_ context.Context, sql string) ([]map[string]any, error) {
 	m.lastSQL = sql
 	return m.result, m.err
-}
-
-// --- mock SchemaProfiler ---
-
-type mockProfiler struct {
-	profile *port.TableProfile
-	err     error
-}
-
-func (m *mockProfiler) ProfileTable(_ context.Context, _, _ string) (*port.TableProfile, error) {
-	return m.profile, m.err
 }
 
 // --- helpers ---
@@ -117,13 +111,8 @@ func toolText(result *mcp.CallToolResult) string {
 	return tc.Text
 }
 
-func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockExecutor) *server.MCPServer {
+func setupServer(explorer *mockExplorer, executor *mockExecutor) *server.MCPServer {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	var prof port.SchemaProfiler
-	if profiler != nil {
-		prof = profiler
-	}
 
 	var querySvc *service.QueryService
 	if executor != nil {
@@ -131,53 +120,45 @@ func setupServer(explorer *mockExplorer, profiler *mockProfiler, executor *mockE
 	}
 
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
-	RegisterTools(s, explorer, prof, querySvc, logger)
+	RegisterTools(s, explorer, querySvc, logger)
 	return s
 }
 
 // --- tests ---
 
-func TestListSchemas_HappyPath(t *testing.T) {
+func TestDiscover_HappyPath(t *testing.T) {
 	explorer := &mockExplorer{
-		schemas: []port.SchemaInfo{{Name: "public"}, {Name: "auth"}},
-	}
-	s := setupServer(explorer, nil, nil)
-
-	result := callTool(t, s, "list_schemas", nil)
-	text := toolText(result)
-
-	var schemas []port.SchemaInfo
-	require.NoError(t, json.Unmarshal([]byte(text), &schemas))
-	assert.Len(t, schemas, 2)
-	assert.Equal(t, "public", schemas[0].Name)
-}
-
-func TestListSchemas_Error(t *testing.T) {
-	explorer := &mockExplorer{err: fmt.Errorf("permission denied")}
-	s := setupServer(explorer, nil, nil)
-
-	result := callTool(t, s, "list_schemas", nil)
-	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "internal error")
-}
-
-func TestListTables_HappyPath(t *testing.T) {
-	explorer := &mockExplorer{
-		tables: []port.TableInfo{
-			{Schema: "public", Name: "users", Type: "table", RowEstimate: 100, ColumnCount: 5, HasIndexes: true},
+		discovery: &port.DiscoveryResult{
+			Schemas: []port.SchemaOverview{
+				{
+					Name: "public",
+					Tables: []port.TableInfo{
+						{Schema: "public", Name: "users", Type: "table", RowEstimate: 100},
+					},
+				},
+			},
 		},
 	}
-	s := setupServer(explorer, nil, nil)
+	s := setupServer(explorer, nil)
 
-	result := callTool(t, s, "list_tables", nil)
+	result := callTool(t, s, "discover", nil)
 	text := toolText(result)
 
-	var tables []port.TableInfo
-	require.NoError(t, json.Unmarshal([]byte(text), &tables))
-	require.Len(t, tables, 1)
-	assert.Equal(t, "users", tables[0].Name)
-	assert.Equal(t, 5, tables[0].ColumnCount)
-	assert.True(t, tables[0].HasIndexes)
+	var discovery port.DiscoveryResult
+	require.NoError(t, json.Unmarshal([]byte(text), &discovery))
+	require.Len(t, discovery.Schemas, 1)
+	assert.Equal(t, "public", discovery.Schemas[0].Name)
+	require.Len(t, discovery.Schemas[0].Tables, 1)
+	assert.Equal(t, "users", discovery.Schemas[0].Tables[0].Name)
+}
+
+func TestDiscover_Error(t *testing.T) {
+	explorer := &mockExplorer{err: fmt.Errorf("permission denied")}
+	s := setupServer(explorer, nil)
+
+	result := callTool(t, s, "discover", nil)
+	assert.True(t, result.IsError)
+	assert.Contains(t, toolText(result), "internal error")
 }
 
 func TestDescribeTable_HappyPath(t *testing.T) {
@@ -196,7 +177,7 @@ func TestDescribeTable_HappyPath(t *testing.T) {
 			},
 		},
 	}
-	s := setupServer(explorer, nil, nil)
+	s := setupServer(explorer, nil)
 
 	result := callTool(t, s, "describe_table", map[string]any{"table_name": "users"})
 	text := toolText(result)
@@ -211,7 +192,7 @@ func TestDescribeTable_HappyPath(t *testing.T) {
 }
 
 func TestDescribeTable_MissingTableName(t *testing.T) {
-	s := setupServer(&mockExplorer{}, nil, nil)
+	s := setupServer(&mockExplorer{}, nil)
 
 	result := callTool(t, s, "describe_table", map[string]any{})
 	assert.True(t, result.IsError)
@@ -220,59 +201,9 @@ func TestDescribeTable_MissingTableName(t *testing.T) {
 
 func TestDescribeTable_Error(t *testing.T) {
 	explorer := &mockExplorer{err: fmt.Errorf("table not found")}
-	s := setupServer(explorer, nil, nil)
+	s := setupServer(explorer, nil)
 
 	result := callTool(t, s, "describe_table", map[string]any{"table_name": "nonexistent"})
-	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "internal error")
-}
-
-func TestProfileTable_HappyPath(t *testing.T) {
-	profiler := &mockProfiler{
-		profile: &port.TableProfile{
-			Schema:      "public",
-			Name:        "orders",
-			RowEstimate: 50000,
-			TotalBytes:  4194304,
-			TableBytes:  3145728,
-			IndexBytes:  1048576,
-			SizeHuman:   "4096 kB",
-			IndexUsage: []port.IndexUsage{
-				{Name: "orders_pkey", Scans: 10000, SizeBytes: 524288, SizeHuman: "512 kB"},
-			},
-			InferredFKs: []port.InferredFK{
-				{ColumnName: "customer_id", ReferencedTable: "customers", ReferencedColumn: "id", Confidence: "high"},
-			},
-		},
-	}
-	s := setupServer(&mockExplorer{}, profiler, nil)
-
-	result := callTool(t, s, "profile_table", map[string]any{"table_name": "orders"})
-	text := toolText(result)
-
-	var profile port.TableProfile
-	require.NoError(t, json.Unmarshal([]byte(text), &profile))
-	assert.Equal(t, "orders", profile.Name)
-	assert.Equal(t, int64(50000), profile.RowEstimate)
-	assert.Len(t, profile.IndexUsage, 1)
-	assert.Len(t, profile.InferredFKs, 1)
-	assert.Equal(t, "customer_id", profile.InferredFKs[0].ColumnName)
-}
-
-func TestProfileTable_MissingTableName(t *testing.T) {
-	profiler := &mockProfiler{}
-	s := setupServer(&mockExplorer{}, profiler, nil)
-
-	result := callTool(t, s, "profile_table", map[string]any{})
-	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "table_name is required")
-}
-
-func TestProfileTable_Error(t *testing.T) {
-	profiler := &mockProfiler{err: fmt.Errorf("table not found")}
-	s := setupServer(&mockExplorer{}, profiler, nil)
-
-	result := callTool(t, s, "profile_table", map[string]any{"table_name": "nonexistent"})
 	assert.True(t, result.IsError)
 	assert.Contains(t, toolText(result), "internal error")
 }
@@ -281,7 +212,7 @@ func TestQuery_HappyPath(t *testing.T) {
 	executor := &mockExecutor{
 		result: []map[string]any{{"id": 1, "name": "alice"}},
 	}
-	s := setupServer(&mockExplorer{}, nil, executor)
+	s := setupServer(&mockExplorer{}, executor)
 
 	result := callTool(t, s, "query", map[string]any{"sql": "SELECT id, name FROM users"})
 	text := toolText(result)
@@ -293,7 +224,7 @@ func TestQuery_HappyPath(t *testing.T) {
 }
 
 func TestQuery_MissingSQL(t *testing.T) {
-	s := setupServer(&mockExplorer{}, nil, &mockExecutor{})
+	s := setupServer(&mockExplorer{}, &mockExecutor{})
 
 	result := callTool(t, s, "query", map[string]any{})
 	assert.True(t, result.IsError)
@@ -302,50 +233,49 @@ func TestQuery_MissingSQL(t *testing.T) {
 
 func TestQuery_ExecutorError(t *testing.T) {
 	executor := &mockExecutor{err: fmt.Errorf("connection timeout")}
-	s := setupServer(&mockExplorer{}, nil, executor)
+	s := setupServer(&mockExplorer{}, executor)
 
 	result := callTool(t, s, "query", map[string]any{"sql": "SELECT 1"})
 	assert.True(t, result.IsError)
 	assert.Contains(t, toolText(result), "internal error")
 }
 
-func TestExplainQuery_HappyPath(t *testing.T) {
+func TestQuery_WithExplain(t *testing.T) {
 	executor := &mockExecutor{
 		result: []map[string]any{{"QUERY PLAN": "Seq Scan on users"}},
 	}
-	s := setupServer(&mockExplorer{}, nil, executor)
+	s := setupServer(&mockExplorer{}, executor)
 
-	result := callTool(t, s, "explain_query", map[string]any{"sql": "SELECT id FROM users"})
-	text := toolText(result)
-
+	result := callTool(t, s, "query", map[string]any{
+		"sql":     "SELECT id FROM users",
+		"explain": true,
+	})
+	assert.False(t, result.IsError)
 	assert.Equal(t, "EXPLAIN SELECT id FROM users", executor.lastSQL)
-
-	var rows []map[string]any
-	require.NoError(t, json.Unmarshal([]byte(text), &rows))
-	require.Len(t, rows, 1)
-	assert.Equal(t, "Seq Scan on users", rows[0]["QUERY PLAN"])
 }
 
-func TestExplainQuery_WithAnalyze(t *testing.T) {
+func TestQuery_WithExplainAnalyze(t *testing.T) {
 	executor := &mockExecutor{
 		result: []map[string]any{{"QUERY PLAN": "Seq Scan on users (actual time=0.01..0.02 rows=1)"}},
 	}
-	s := setupServer(&mockExplorer{}, nil, executor)
+	s := setupServer(&mockExplorer{}, executor)
 
-	result := callTool(t, s, "explain_query", map[string]any{
+	result := callTool(t, s, "query", map[string]any{
 		"sql":     "SELECT id FROM users",
+		"explain": true,
 		"analyze": true,
 	})
 	assert.False(t, result.IsError)
 	assert.Equal(t, "EXPLAIN ANALYZE SELECT id FROM users", executor.lastSQL)
 }
 
-func TestExplainQuery_MissingSQL(t *testing.T) {
-	s := setupServer(&mockExplorer{}, nil, &mockExecutor{})
+func TestQuery_ValidationErrorPassthrough(t *testing.T) {
+	executor := &mockExecutor{}
+	s := setupServer(&mockExplorer{}, executor)
 
-	result := callTool(t, s, "explain_query", map[string]any{})
+	result := callTool(t, s, "query", map[string]any{"sql": "DROP TABLE users"})
 	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "sql is required")
+	assert.Contains(t, toolText(result), "only SELECT queries are allowed")
 }
 
 // --- sanitizeError tests ---
@@ -389,13 +319,4 @@ func TestSanitizeError_Generic(t *testing.T) {
 	assert.Contains(t, msg, "internal error")
 	assert.Contains(t, msg, "check server logs")
 	assert.NotContains(t, msg, "OID")
-}
-
-func TestQuery_ValidationErrorPassthrough(t *testing.T) {
-	executor := &mockExecutor{}
-	s := setupServer(&mockExplorer{}, nil, executor)
-
-	result := callTool(t, s, "query", map[string]any{"sql": "DROP TABLE users"})
-	assert.True(t, result.IsError)
-	assert.Contains(t, toolText(result), "only SELECT queries are allowed")
 }

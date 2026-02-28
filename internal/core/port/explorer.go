@@ -70,14 +70,37 @@ type TableDetail struct {
 	Indexes          []IndexInfo       `json:"indexes,omitempty"`
 	CheckConstraints []CheckConstraint `json:"check_constraints,omitempty"`
 	StatsAge         *time.Time        `json:"stats_age,omitempty"`
+	StatsAgeWarning  string            `json:"stats_age_warning,omitempty"`
+	SampleRows       []map[string]any  `json:"sample_rows,omitempty"`
+	IndexUsage       []IndexUsage      `json:"index_usage,omitempty"`
+}
+
+// IndexUsage holds usage statistics for a single index.
+type IndexUsage struct {
+	Name      string `json:"name"`
+	Scans     int64  `json:"scans"`
+	SizeBytes int64  `json:"size_bytes"`
+	SizeHuman string `json:"size_human"`
 }
 
 type SchemaInfo struct {
 	Name string `json:"name"`
 }
 
+// SchemaOverview groups tables under their schema for discovery results.
+type SchemaOverview struct {
+	Name   string      `json:"name"`
+	Tables []TableInfo `json:"tables"`
+}
+
+// DiscoveryResult is the response from Discover — all schemas with nested tables.
+type DiscoveryResult struct {
+	Schemas []SchemaOverview `json:"schemas"`
+}
+
 type SchemaExplorer interface {
 	ListSchemas(ctx context.Context) ([]SchemaInfo, error)
 	ListTables(ctx context.Context) ([]TableInfo, error)
 	DescribeTable(ctx context.Context, schema, tableName string) (*TableDetail, error)
+	Discover(ctx context.Context) (*DiscoveryResult, error)
 }

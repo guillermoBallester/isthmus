@@ -217,6 +217,48 @@ func (e *Explorer) fetchTableSize(ctx context.Context, schema, tableName string)
 	return rowEstimate, totalBytes, sizeHuman, nil
 }
 
+// fetchSampleRows retrieves a handful of representative rows from a table.
+func fetchSampleRows(ctx context.Context, pool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}, schema, tableName string) ([]map[string]any, error) {
+	fqn := fmt.Sprintf("%s.%s", quoteIdent(schema), quoteIdent(tableName))
+	query := fmt.Sprintf("SELECT * FROM %s TABLESAMPLE BERNOULLI(50) LIMIT 5", fqn)
+
+	rows, err := pool.Query(ctx, query)
+	if err != nil {
+		// Fallback: TABLESAMPLE may not work on some table types (e.g., foreign tables).
+		query = fmt.Sprintf("SELECT * FROM %s LIMIT 5", fqn)
+		rows, err = pool.Query(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("sampling rows: %w", err)
+		}
+	}
+	defer rows.Close()
+
+	return rowsToMaps(rows)
+}
+
+// fetchIndexUsage retrieves usage statistics for all indexes on a table.
+func fetchIndexUsage(ctx context.Context, pool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}, schema, tableName string) ([]port.IndexUsage, error) {
+	rows, err := pool.Query(ctx, queryIndexUsage, schema, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("querying index usage: %w", err)
+	}
+	defer rows.Close()
+
+	var usage []port.IndexUsage
+	for rows.Next() {
+		var u port.IndexUsage
+		if err := rows.Scan(&u.Name, &u.Scans, &u.SizeBytes, &u.SizeHuman); err != nil {
+			return nil, fmt.Errorf("scanning index usage: %w", err)
+		}
+		usage = append(usage, u)
+	}
+	return usage, rows.Err()
+}
+
 // fetchStatsAge reads the last ANALYZE timestamp for a table.
 func (e *Explorer) fetchStatsAge(ctx context.Context, schema, tableName string) (*time.Time, error) {
 	var ts *time.Time

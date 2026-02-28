@@ -3,7 +3,7 @@ title: "SQL Validation"
 description: "How Isthmus validates SQL queries using PostgreSQL's AST parser."
 ---
 
-Every SQL query submitted through the `query` and `explain_query` tools is validated before execution. Isthmus uses PostgreSQL's actual parser (via [`pg_query`](https://github.com/pganalyze/pg_query_go)) to parse SQL into an abstract syntax tree (AST) and applies a strict whitelist.
+Every SQL query submitted through the `query` tool is validated before execution. Isthmus uses PostgreSQL's actual parser (via [`pg_query`](https://github.com/pganalyze/pg_query_go)) to parse SQL into an abstract syntax tree (AST) and applies a strict whitelist.
 
 ## How it works
 

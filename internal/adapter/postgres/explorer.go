@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/guillermoBallester/isthmus/internal/core/port"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -63,6 +64,36 @@ func (e *Explorer) ListTables(ctx context.Context) ([]port.TableInfo, error) {
 	return tables, rows.Err()
 }
 
+func (e *Explorer) Discover(ctx context.Context) (*port.DiscoveryResult, error) {
+	schemas, err := e.ListSchemas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("discovering schemas: %w", err)
+	}
+
+	tables, err := e.ListTables(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("discovering tables: %w", err)
+	}
+
+	// Group tables by schema.
+	bySchema := make(map[string][]port.TableInfo)
+	for _, t := range tables {
+		bySchema[t.Schema] = append(bySchema[t.Schema], t)
+	}
+
+	result := &port.DiscoveryResult{
+		Schemas: make([]port.SchemaOverview, 0, len(schemas)),
+	}
+	for _, s := range schemas {
+		result.Schemas = append(result.Schemas, port.SchemaOverview{
+			Name:   s.Name,
+			Tables: bySchema[s.Name],
+		})
+	}
+
+	return result, nil
+}
+
 func (e *Explorer) DescribeTable(ctx context.Context, schema, tableName string) (*port.TableDetail, error) {
 	detail := &port.TableDetail{Name: tableName}
 
@@ -120,6 +151,28 @@ func (e *Explorer) DescribeTable(ctx context.Context, schema, tableName string) 
 
 	// Fetch stats freshness.
 	detail.StatsAge, err = e.fetchStatsAge(ctx, detail.Schema, tableName)
+	if err != nil {
+		_ = err
+	}
+
+	// Stats age warning.
+	if detail.StatsAge != nil {
+		age := time.Since(*detail.StatsAge)
+		if age > 7*24*time.Hour {
+			detail.StatsAgeWarning = fmt.Sprintf("Statistics are %.0f days old. Consider running ANALYZE on this table.", age.Hours()/24)
+		}
+	} else {
+		detail.StatsAgeWarning = "No ANALYZE has been run on this table. Statistics may be missing or inaccurate."
+	}
+
+	// Sample rows (non-fatal).
+	detail.SampleRows, err = fetchSampleRows(ctx, e.pool, detail.Schema, tableName)
+	if err != nil {
+		_ = err
+	}
+
+	// Index usage (non-fatal).
+	detail.IndexUsage, err = fetchIndexUsage(ctx, e.pool, detail.Schema, tableName)
 	if err != nil {
 		_ = err
 	}
