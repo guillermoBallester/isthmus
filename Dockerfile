@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -o /bin/isthmus ./cmd/isthmus
 
 FROM gcr.io/distroless/base-debian12
+LABEL io.modelcontextprotocol.server.name="io.github.guillermoballester/isthmus"
 COPY --from=builder /bin/isthmus /usr/local/bin/isthmus
 USER nonroot:nonroot
 ENTRYPOINT ["isthmus"]
