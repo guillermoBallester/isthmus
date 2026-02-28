@@ -9,16 +9,15 @@
 <p align="center">
   <a href="https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml"><img src="https://github.com/guillermoBallester/isthmus/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://goreportcard.com/report/github.com/guillermoBallester/isthmus"><img src="https://goreportcard.com/badge/github.com/guillermoBallester/isthmus" alt="Go Report Card" /></a>
-
   <a href="https://github.com/guillermoBallester/isthmus/releases/latest"><img src="https://img.shields.io/github/v/release/guillermoBallester/isthmus?label=release" alt="Latest Release" /></a>
   <a href="https://github.com/guillermoBallester/isthmus/stargazers"><img src="https://img.shields.io/github/stars/guillermoBallester/isthmus" alt="GitHub Stars" /></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
 </p>
 
 <p align="center">
-  <a href="https://isthmus.dev">Docs</a> &middot;
-  <a href="https://isthmus.dev/quickstart">Quickstart</a> &middot;
-  <a href="https://isthmus.dev/installation">Install</a> &middot;
+  <a href="https://isthmus.dev/docs">Docs</a> &middot;
+  <a href="https://isthmus.dev/docs/quickstart">Quickstart</a> &middot;
+  <a href="https://isthmus.dev/docs/installation">Install</a> &middot;
   <a href="https://github.com/guillermoBallester/isthmus/issues">Issues</a>
 </p>
 
@@ -58,19 +57,19 @@ curl -fsSL https://isthmus.dev/install.sh | sh
 # 3. Ask your AI: "What tables are in my database?"
 ```
 
-See the [quickstart guide](https://isthmus.dev/quickstart) for step-by-step setup with Claude Desktop, Cursor, Windsurf, and more.
+See the [quickstart guide](https://isthmus.dev/docs/quickstart) for step-by-step setup with Claude Desktop, Cursor, Windsurf, and more.
 
 ## Features
 
-- **Schema discovery** — explore schemas, tables, columns, foreign keys, and indexes ([docs](https://isthmus.dev/tools/overview))
-- **Read-only queries** — execute SQL with server-side row limits and query timeouts ([docs](https://isthmus.dev/tools/query))
-- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/features/column-masking))
-- **Table profiler** — column statistics, cardinality, sample rows, index usage ([docs](https://isthmus.dev/tools/profile-table))
-- **Policy engine** — enrich your schema with business context so the AI writes better SQL ([docs](https://isthmus.dev/features/policy-engine))
-- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/configuration))
-- **HTTP transport** — serve MCP over HTTP for web-based clients, ChatGPT Desktop, and remote access ([docs](https://isthmus.dev/features/http-transport))
-- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/features/opentelemetry))
-- **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code, ChatGPT Desktop ([client setup](https://isthmus.dev/clients/claude-desktop))
+- **Schema discovery** — explore schemas, tables, columns, foreign keys, and indexes ([docs](https://isthmus.dev/docs/tools/overview))
+- **Read-only queries** — execute SQL with server-side row limits and query timeouts ([docs](https://isthmus.dev/docs/tools/query))
+- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/features/docs/column-masking))
+- **Table profiler** — column statistics, cardinality, sample rows, index usage ([docs](https://isthmus.dev/docs/tools/profile-table))
+- **Policy engine** — enrich your schema with business context so the AI writes better SQL ([docs](https://isthmus.dev/docs/features/policy-engine))
+- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/docs/configuration))
+- **HTTP transport** — serve MCP over HTTP for web-based clients, ChatGPT Desktop, and remote access ([docs](https://isthmus.dev/docs/features/http-transport))
+- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/features/docs/opentelemetry))
+- **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code, ChatGPT Desktop ([client setup](https://isthmus.dev/docs/clients/claude-desktop))
 
 ## How it works
 
@@ -109,12 +108,12 @@ Full reference: [isthmus.dev/tools/overview](https://isthmus.dev/tools/overview)
 
 Visit **[isthmus.dev](https://isthmus.dev)** for the full documentation:
 
-- [Installation](https://isthmus.dev/installation) — prebuilt binaries, `go install`, Docker
-- [Configuration](https://isthmus.dev/configuration) — env vars, CLI flags, full reference
-- [Client setup](https://isthmus.dev/clients/claude-desktop) — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code
-- [Column masking](https://isthmus.dev/features/column-masking) — PII protection with redact, hash, partial, null
-- [Policy engine](https://isthmus.dev/features/policy-engine) — business context, schema filtering
-- [Tools reference](https://isthmus.dev/tools/overview) — what each tool does and how the AI uses them
+- [Installation](https://isthmus.dev/docs/installation) — prebuilt binaries, `go install`, Docker
+- [Configuration](https://isthmus.dev/docs/configuration) — env vars, CLI flags, full reference
+- [Client setup](https://isthmus.dev/docs/clients/claude-desktop) — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code
+- [Column masking](https://isthmus.dev/docs/features/column-masking) — PII protection with redact, hash, partial, null
+- [Policy engine](https://isthmus.dev/docs/features/policy-engine) — business context, schema filtering
+- [Tools reference](https://isthmus.dev/docs/tools/overview) — what each tool does and how the AI uses them
 
 ## Contributing
 

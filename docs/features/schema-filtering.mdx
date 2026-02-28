@@ -43,12 +43,9 @@ Only the listed schemas are visible. All tools respect this filter:
 
 | Tool | Effect |
 |---|---|
-| `list_schemas` | Only returns the allowed schemas |
-| `list_tables` | Only returns tables in allowed schemas |
+| `discover` | Only returns the allowed schemas and their tables |
 | `describe_table` | Only works for tables in allowed schemas |
-| `profile_table` | Only works for tables in allowed schemas |
 | `query` | Queries can reference any table, but schema discovery is limited |
-| `explain_query` | Same as `query` |
 
 <Warning>
   Schema filtering restricts **discovery**, not SQL execution. A query like `SELECT * FROM hidden_schema.secret_table` will still execute if the database user has access. For true access control, use PostgreSQL roles and grants. See [Security](/security).

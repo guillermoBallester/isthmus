@@ -75,12 +75,9 @@
             "group": "MCP Tools",
             "pages": [
               "tools/overview",
-              "tools/list-schemas",
-              "tools/list-tables",
+              "tools/discover",
               "tools/describe-table",
-              "tools/profile-table",
-              "tools/query",
-              "tools/explain-query"
+              "tools/query"
             ]
           }
         ]

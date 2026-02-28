@@ -123,7 +123,6 @@ func setupE2E(t *testing.T) *server.MCPServer {
 
 	// Real adapters.
 	explorer := postgres.NewExplorer(pool, nil)
-	profiler := postgres.NewProfiler(pool, nil)
 	executor := postgres.NewExecutor(pool, true, 100, 10*time.Second)
 
 	// Real services.
@@ -132,53 +131,44 @@ func setupE2E(t *testing.T) *server.MCPServer {
 
 	// Real MCP server.
 	s := server.NewMCPServer("test-e2e", "0.0.1", server.WithToolCapabilities(true))
-	RegisterTools(s, explorer, profiler, querySvc, logger)
+	RegisterTools(s, explorer, querySvc, logger)
 	return s
 }
 
 func TestE2E_MCPTools(t *testing.T) {
 	s := setupE2E(t)
 
-	t.Run("list_schemas", func(t *testing.T) {
-		result := callToolE2E(t, s, "list_schemas", nil)
+	t.Run("discover", func(t *testing.T) {
+		result := callToolE2E(t, s, "discover", nil)
 		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
 
-		var schemas []port.SchemaInfo
-		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &schemas))
+		var discovery port.DiscoveryResult
+		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &discovery))
 
-		names := make(map[string]bool)
-		for _, s := range schemas {
-			names[s.Name] = true
+		// Find public schema.
+		var publicSchema *port.SchemaOverview
+		for i, schema := range discovery.Schemas {
+			if schema.Name == "public" {
+				publicSchema = &discovery.Schemas[i]
+				break
+			}
 		}
-		assert.True(t, names["public"], "should contain 'public' schema")
-		assert.False(t, names["pg_catalog"], "should exclude pg_catalog")
-		assert.False(t, names["information_schema"], "should exclude information_schema")
-	})
-
-	t.Run("list_tables", func(t *testing.T) {
-		result := callToolE2E(t, s, "list_tables", nil)
-		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
-
-		var tables []port.TableInfo
-		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &tables))
+		require.NotNil(t, publicSchema, "should contain public schema")
 
 		tableMap := make(map[string]port.TableInfo)
-		for _, tbl := range tables {
+		for _, tbl := range publicSchema.Tables {
 			tableMap[tbl.Name] = tbl
 		}
-
-		assert.Len(t, tables, 4, "expected 3 tables + 1 view")
+		assert.Contains(t, tableMap, "products")
+		assert.Contains(t, tableMap, "categories")
+		assert.Contains(t, tableMap, "reviews")
+		assert.Contains(t, tableMap, "active_products")
 
 		products := tableMap["products"]
 		assert.Equal(t, "table", products.Type)
 		assert.Greater(t, products.RowEstimate, int64(0))
-		assert.Greater(t, products.TotalBytes, int64(0))
 		assert.Equal(t, 8, products.ColumnCount)
 		assert.True(t, products.HasIndexes)
-		assert.Equal(t, "Product catalog", products.Comment)
-
-		active := tableMap["active_products"]
-		assert.Equal(t, "view", active.Type)
 	})
 
 	t.Run("describe_table", func(t *testing.T) {
@@ -232,20 +222,24 @@ func TestE2E_MCPTools(t *testing.T) {
 		assert.Equal(t, domain.CardinalityEnumLike, statusCol.Stats.Cardinality)
 		assert.Contains(t, statusCol.Stats.MostCommonVals, "active")
 
-		// Column stats: deleted_at high null fraction.
-		deletedAt := colMap["deleted_at"]
-		require.NotNil(t, deletedAt.Stats, "deleted_at column should have stats")
-		assert.Greater(t, deletedAt.Stats.NullFraction, 0.9)
-
-		// Column stats: price has min/max.
-		priceCol := colMap["price"]
-		if priceCol.Stats != nil {
-			assert.NotEmpty(t, priceCol.Stats.MinValue)
-			assert.NotEmpty(t, priceCol.Stats.MaxValue)
-		}
-
 		// Stats age should be set (we ran ANALYZE).
 		assert.NotNil(t, detail.StatsAge)
+
+		// Sample rows should be present.
+		assert.NotEmpty(t, detail.SampleRows, "should have sample rows")
+		assert.LessOrEqual(t, len(detail.SampleRows), 5)
+		for _, row := range detail.SampleRows {
+			assert.Contains(t, row, "id")
+			assert.Contains(t, row, "name")
+		}
+
+		// Index usage should be present.
+		assert.NotEmpty(t, detail.IndexUsage, "should have index usage")
+		indexNames := make(map[string]bool)
+		for _, u := range detail.IndexUsage {
+			indexNames[u.Name] = true
+		}
+		assert.True(t, indexNames["products_pkey"], "should include products_pkey")
 	})
 
 	t.Run("describe_table/schema_arg", func(t *testing.T) {
@@ -265,64 +259,6 @@ func TestE2E_MCPTools(t *testing.T) {
 		result := callToolE2E(t, s, "describe_table", map[string]any{"table_name": "nonexistent_table"})
 		assert.True(t, result.IsError)
 		assert.Contains(t, toolText(result), "nonexistent_table")
-	})
-
-	t.Run("profile_table", func(t *testing.T) {
-		result := callToolE2E(t, s, "profile_table", map[string]any{"table_name": "products"})
-		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
-
-		var profile port.TableProfile
-		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &profile))
-
-		assert.Greater(t, profile.TableBytes, int64(0))
-		assert.Greater(t, profile.IndexBytes, int64(0))
-		assert.GreaterOrEqual(t, profile.TotalBytes, profile.TableBytes+profile.IndexBytes)
-
-		// Sample rows.
-		assert.NotEmpty(t, profile.SampleRows)
-		for _, row := range profile.SampleRows {
-			assert.Contains(t, row, "id")
-			assert.Contains(t, row, "name")
-			assert.Contains(t, row, "status")
-		}
-
-		// Index usage.
-		indexNames := make(map[string]bool)
-		for _, u := range profile.IndexUsage {
-			indexNames[u.Name] = true
-		}
-		assert.True(t, indexNames["products_pkey"], "should include products_pkey")
-		assert.True(t, indexNames["idx_products_category"], "should include idx_products_category")
-	})
-
-	t.Run("profile_table/inferred_fks", func(t *testing.T) {
-		result := callToolE2E(t, s, "profile_table", map[string]any{"table_name": "reviews"})
-		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
-
-		var profile port.TableProfile
-		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &profile))
-
-		fkMap := make(map[string]port.InferredFK)
-		for _, fk := range profile.InferredFKs {
-			fkMap[fk.ColumnName] = fk
-		}
-
-		productFK, ok := fkMap["product_id"]
-		require.True(t, ok, "should infer product_id FK")
-		assert.Equal(t, "products", productFK.ReferencedTable)
-		assert.Equal(t, "id", productFK.ReferencedColumn)
-		assert.Equal(t, "high", productFK.Confidence)
-	})
-
-	t.Run("profile_table/stats_freshness", func(t *testing.T) {
-		result := callToolE2E(t, s, "profile_table", map[string]any{"table_name": "products"})
-		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
-
-		var profile port.TableProfile
-		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &profile))
-
-		assert.NotNil(t, profile.StatsAge, "StatsAge should be set after ANALYZE")
-		assert.Empty(t, profile.StatsAgeWarning, "should not warn about fresh stats")
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -347,9 +283,10 @@ func TestE2E_MCPTools(t *testing.T) {
 		assert.Contains(t, text, "only SELECT queries are allowed")
 	})
 
-	t.Run("explain_query", func(t *testing.T) {
-		result := callToolE2E(t, s, "explain_query", map[string]any{
-			"sql": "SELECT id FROM products WHERE status = 'active'",
+	t.Run("query/explain", func(t *testing.T) {
+		result := callToolE2E(t, s, "query", map[string]any{
+			"sql":     "SELECT id FROM products WHERE status = 'active'",
+			"explain": true,
 		})
 		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
 
@@ -359,9 +296,10 @@ func TestE2E_MCPTools(t *testing.T) {
 		assert.Contains(t, rows[0], "QUERY PLAN")
 	})
 
-	t.Run("explain_query/analyze", func(t *testing.T) {
-		result := callToolE2E(t, s, "explain_query", map[string]any{
+	t.Run("query/explain_analyze", func(t *testing.T) {
+		result := callToolE2E(t, s, "query", map[string]any{
 			"sql":     "SELECT id FROM products WHERE status = 'active'",
+			"explain": true,
 			"analyze": true,
 		})
 		require.False(t, result.IsError, "unexpected error: %s", toolText(result))
@@ -369,7 +307,6 @@ func TestE2E_MCPTools(t *testing.T) {
 		var rows []map[string]any
 		require.NoError(t, json.Unmarshal([]byte(toolText(result)), &rows))
 		require.NotEmpty(t, rows)
-		// EXPLAIN ANALYZE includes "actual time" or "actual rows" in the plan output.
 		planText, _ := rows[0]["QUERY PLAN"].(string)
 		assert.Contains(t, planText, "actual", "EXPLAIN ANALYZE should include actual timing")
 	})

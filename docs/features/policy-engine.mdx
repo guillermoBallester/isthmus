@@ -3,7 +3,7 @@ title: "Policy Engine"
 description: "Enrich MCP tool responses with business context using a YAML policy file."
 ---
 
-The policy engine lets you attach business descriptions to tables and columns via a YAML file. These descriptions are merged into `describe_table` and `list_tables` responses, giving the AI model context about what your data means — not just what types it has.
+The policy engine lets you attach business descriptions to tables and columns via a YAML file. These descriptions are merged into `describe_table` and `discover` responses, giving the AI model context about what your data means — not just what types it has.
 
 ## Enabling the policy engine
 
@@ -124,7 +124,7 @@ context:
           mask: "redact"
 ```
 
-Four mask types are available: `redact`, `hash`, `partial`, and `null`. Masking is applied to both `query` results and `profile_table` sample rows.
+Four mask types are available: `redact`, `hash`, `partial`, and `null`. Masking is applied to both `query` results and `describe_table` sample rows.
 
 See [Column Masking](/features/column-masking) for the full reference — mask types, examples, conflict detection, and best practices.
 

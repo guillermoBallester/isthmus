@@ -1,36 +1,27 @@
 ---
 title: "Your database, understood by AI"
-description: "Isthmus is a local MCP server that connects any AI to your PostgreSQL database. Schema discovery, query execution, and table profiling — all running on your machine."
+description: "Isthmus is a local MCP server that connects any AI to your PostgreSQL database. Schema discovery, query execution, and table analysis — all running on your machine."
 ---
 
 ## What is Isthmus?
 
 Isthmus is an open-source [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that gives AI models direct access to your PostgreSQL database. It runs locally as a single binary, supports both stdio and [HTTP transports](/features/http-transport), and requires no cloud services.
 
-Point your AI client at Isthmus, and it can discover your schema, understand table relationships, profile data distributions, and execute read-only SQL queries — all with built-in safety guardrails.
+Point your AI client at Isthmus, and it can discover your schema, understand table relationships, analyze data distributions, and execute read-only SQL queries — all with built-in safety guardrails.
 
 ## Tools
 
-Isthmus exposes six MCP tools that let AI models explore and query your database:
+Isthmus exposes three MCP tools that let AI models explore and query your database:
 
-<CardGroup cols={2}>
-  <Card title="list_schemas" icon="database" href="/tools/list-schemas">
-    Discover available database schemas.
-  </Card>
-  <Card title="list_tables" icon="table" href="/tools/list-tables">
-    List all tables with sizes, row counts, and column counts.
+<CardGroup cols={3}>
+  <Card title="discover" icon="database" href="/tools/discover">
+    Full database landscape: all schemas with their tables, sizes, row counts, and column counts in a single call.
   </Card>
   <Card title="describe_table" icon="magnifying-glass" href="/tools/describe-table">
-    Full table structure: columns, types, foreign keys, indexes, and column statistics.
-  </Card>
-  <Card title="profile_table" icon="chart-bar" href="/tools/profile-table">
-    Deep analysis: sample rows, disk usage, index usage, and inferred relationships.
+    Complete table analysis: columns, types, foreign keys, indexes, column statistics, sample rows, and index usage.
   </Card>
   <Card title="query" icon="terminal" href="/tools/query">
-    Execute read-only SQL queries and get results as JSON.
-  </Card>
-  <Card title="explain_query" icon="bolt" href="/tools/explain-query">
-    Show PostgreSQL execution plans with optional ANALYZE.
+    Execute read-only SQL queries with optional EXPLAIN plans.
   </Card>
 </CardGroup>
 

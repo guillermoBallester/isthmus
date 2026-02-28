@@ -148,15 +148,12 @@ func TestSchemaFilter_ParamOffset(t *testing.T) {
 
 func TestParsePgArray_EscapedBrace(t *testing.T) {
 	t.Parallel()
-	// Outer } is stripped by TrimSuffix, so the escaped char is consumed by brace stripping.
-	// Input after brace stripping: hello\  → escape consumes nothing useful → "hello".
 	got := parsePgArray(`{hello\}`)
 	assert.Equal(t, []string{"hello"}, got)
 }
 
 func TestParsePgArray_ConsecutiveCommas(t *testing.T) {
 	t.Parallel()
-	// Consecutive commas produce empty strings (not NULL-filtered).
 	got := parsePgArray("{a,,b}")
 	assert.Equal(t, []string{"a", "", "b"}, got)
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// testSchemaProfiler creates a richer schema for profiler testing.
+// testSchemaProfiler creates a richer schema for profiler/explorer testing.
 const testSchemaProfiler = `
 	CREATE TABLE categories (
 		id   SERIAL PRIMARY KEY,
@@ -219,55 +219,36 @@ func TestListTables_Enhanced(t *testing.T) {
 	assert.Greater(t, categories.ColumnCount, 0)
 }
 
-func TestProfileTable_SizeBreakdown(t *testing.T) {
+func TestDescribeTable_SampleRows(t *testing.T) {
 	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
+	explorer := postgres.NewExplorer(pool, nil)
 	ctx := context.Background()
 
-	profile, err := profiler.ProfileTable(ctx, "", "products")
+	detail, err := explorer.DescribeTable(ctx, "", "products")
 	require.NoError(t, err)
 
-	assert.Equal(t, "public", profile.Schema)
-	assert.Equal(t, "products", profile.Name)
-	assert.Greater(t, profile.RowEstimate, int64(0))
-	assert.Greater(t, profile.TotalBytes, int64(0))
-	assert.Greater(t, profile.TableBytes, int64(0))
-	assert.Greater(t, profile.IndexBytes, int64(0))
-	assert.NotEmpty(t, profile.SizeHuman)
-}
+	assert.NotEmpty(t, detail.SampleRows, "should have sample rows")
+	assert.LessOrEqual(t, len(detail.SampleRows), 5, "should have at most 5 sample rows")
 
-func TestProfileTable_SampleRows(t *testing.T) {
-	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
-	ctx := context.Background()
-
-	profile, err := profiler.ProfileTable(ctx, "", "products")
-	require.NoError(t, err)
-
-	// Sample rows should be present (table has 100 rows).
-	assert.NotEmpty(t, profile.SampleRows, "should have sample rows")
-	assert.LessOrEqual(t, len(profile.SampleRows), 5, "should have at most 5 sample rows")
-
-	// Each row should have column names as keys.
-	for _, row := range profile.SampleRows {
+	for _, row := range detail.SampleRows {
 		assert.Contains(t, row, "id")
 		assert.Contains(t, row, "name")
 		assert.Contains(t, row, "status")
 	}
 }
 
-func TestProfileTable_IndexUsage(t *testing.T) {
+func TestDescribeTable_IndexUsage(t *testing.T) {
 	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
+	explorer := postgres.NewExplorer(pool, nil)
 	ctx := context.Background()
 
-	profile, err := profiler.ProfileTable(ctx, "", "products")
+	detail, err := explorer.DescribeTable(ctx, "", "products")
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, profile.IndexUsage, "products should have index usage stats")
+	assert.NotEmpty(t, detail.IndexUsage, "products should have index usage stats")
 
 	indexNames := make(map[string]bool)
-	for _, u := range profile.IndexUsage {
+	for _, u := range detail.IndexUsage {
 		indexNames[u.Name] = true
 		assert.Greater(t, u.SizeBytes, int64(0), "index %s should have non-zero size", u.Name)
 	}
@@ -276,62 +257,48 @@ func TestProfileTable_IndexUsage(t *testing.T) {
 	assert.True(t, indexNames["idx_products_category"], "should include category index")
 }
 
-func TestProfileTable_InferredFKs(t *testing.T) {
+func TestDescribeTable_StatsAgeWarning(t *testing.T) {
 	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
+	explorer := postgres.NewExplorer(pool, nil)
 	ctx := context.Background()
 
-	// Reviews has product_id and user_id without explicit FKs.
-	profile, err := profiler.ProfileTable(ctx, "", "reviews")
-	require.NoError(t, err)
-
-	assert.NotEmpty(t, profile.InferredFKs, "reviews should have inferred FKs")
-
-	fkMap := make(map[string]port.InferredFK)
-	for _, fk := range profile.InferredFKs {
-		fkMap[fk.ColumnName] = fk
-	}
-
-	// product_id should reference products.
-	productFK, ok := fkMap["product_id"]
-	assert.True(t, ok, "should infer product_id FK")
-	if ok {
-		assert.Equal(t, "products", productFK.ReferencedTable)
-		assert.Equal(t, "id", productFK.ReferencedColumn)
-		assert.Equal(t, "high", productFK.Confidence)
-	}
-}
-
-func TestProfileTable_StatsWarning(t *testing.T) {
-	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
-	ctx := context.Background()
-
-	profile, err := profiler.ProfileTable(ctx, "", "products")
+	detail, err := explorer.DescribeTable(ctx, "", "products")
 	require.NoError(t, err)
 
 	// We just ran ANALYZE, so no warning expected.
-	assert.NotNil(t, profile.StatsAge)
-	assert.Empty(t, profile.StatsAgeWarning, "should not warn about fresh stats")
+	assert.NotNil(t, detail.StatsAge)
+	assert.Empty(t, detail.StatsAgeWarning, "should not warn about fresh stats")
 }
 
-func TestProfileTable_NotFound(t *testing.T) {
+func TestDiscover(t *testing.T) {
 	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
+	explorer := postgres.NewExplorer(pool, nil)
 	ctx := context.Background()
 
-	_, err := profiler.ProfileTable(ctx, "", "nonexistent_table")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "nonexistent_table")
-}
-
-func TestProfileTable_WithExplicitSchema(t *testing.T) {
-	pool := setupProfilerDB(t)
-	profiler := postgres.NewProfiler(pool, nil)
-	ctx := context.Background()
-
-	profile, err := profiler.ProfileTable(ctx, "public", "products")
+	result, err := explorer.Discover(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "public", profile.Schema)
-	assert.Equal(t, "products", profile.Name)
+
+	// Find public schema.
+	var publicSchema *port.SchemaOverview
+	for i, s := range result.Schemas {
+		if s.Name == "public" {
+			publicSchema = &result.Schemas[i]
+			break
+		}
+	}
+	require.NotNil(t, publicSchema, "should contain public schema")
+
+	tableMap := make(map[string]port.TableInfo)
+	for _, tbl := range publicSchema.Tables {
+		tableMap[tbl.Name] = tbl
+	}
+
+	assert.Contains(t, tableMap, "products")
+	assert.Contains(t, tableMap, "categories")
+	assert.Contains(t, tableMap, "reviews")
+
+	products := tableMap["products"]
+	assert.Equal(t, "table", products.Type)
+	assert.Greater(t, products.RowEstimate, int64(0))
+	assert.Equal(t, 8, products.ColumnCount)
 }

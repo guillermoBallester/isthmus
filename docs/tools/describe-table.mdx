@@ -1,13 +1,13 @@
 ---
 title: "describe_table"
-description: "Full table structure including columns, keys, indexes, and column statistics."
+description: "Complete table analysis: columns, keys, indexes, column statistics, sample rows, and index usage."
 ---
 
 ## Description
 
-Describe a table's full structure including: columns with types, nullability, defaults, and comments; column-level statistics from `pg_stats` (cardinality classification, null rates, enum-like values with frequencies, value ranges for dates/numbers); primary keys; foreign keys with referenced tables; indexes; check constraints; row estimate; table size; and statistics freshness.
+Complete analysis of a single table including: columns with types, nullability, defaults, and comments; column-level statistics from `pg_stats` (cardinality classification, null rates, enum-like values with frequencies, value ranges for dates/numbers); primary keys; foreign keys with referenced tables; indexes; check constraints; row estimate; table size; statistics freshness; sample rows (up to 5); and index usage statistics.
 
-Use this to understand a table before writing queries. Pay attention to: foreign keys for JOIN paths; cardinality to know what to GROUP BY vs filter; enum-like columns show the allowed values; value ranges show date spans and numeric scales; null rates help you handle NULLs correctly in filters and JOINs.
+Use this to understand a table before writing queries. Pay attention to: foreign keys for JOIN paths; cardinality to know what to GROUP BY vs filter; enum-like columns show the allowed values; value ranges show date spans and numeric scales; null rates help you handle NULLs correctly in filters and JOINs; sample rows to see actual data patterns; and index usage to understand query performance.
 
 ## Parameters
 
@@ -31,6 +31,9 @@ Use this to understand a table before writing queries. Pay attention to: foreign
 | `indexes` | array | Index definitions (see below) |
 | `check_constraints` | array | Check constraints (see below) |
 | `stats_age` | string | Timestamp of last `ANALYZE` run (omitted if unknown) |
+| `stats_age_warning` | string | Warning if statistics are stale or missing (omitted if fresh) |
+| `sample_rows` | array | Up to 5 sample rows as key-value objects (omitted if unavailable) |
+| `index_usage` | array | Per-index usage statistics (see below) |
 
 ### Column object
 
@@ -79,6 +82,15 @@ Use this to understand a table before writing queries. Pay attention to: foreign
 |---|---|---|
 | `name` | string | Constraint name |
 | `expression` | string | Check expression |
+
+### Index usage object
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Index name |
+| `scans` | integer | Number of index scans since last stats reset |
+| `size_bytes` | integer | Index size in bytes |
+| `size_human` | string | Human-readable index size |
 
 ## Example response
 
@@ -150,12 +162,55 @@ Use this to understand a table before writing queries. Pay attention to: foreign
       "is_unique": false
     }
   ],
-  "stats_age": "2026-02-25T12:00:00Z"
+  "stats_age": "2026-02-25T12:00:00Z",
+  "sample_rows": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "status": "paid",
+      "amount_cents": 4999,
+      "created_at": "2026-01-15T14:30:00Z"
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "status": "shipped",
+      "amount_cents": 12500,
+      "created_at": "2026-02-01T09:15:00Z"
+    }
+  ],
+  "index_usage": [
+    {
+      "name": "orders_pkey",
+      "scans": 152340,
+      "size_bytes": 5242880,
+      "size_human": "5120 kB"
+    },
+    {
+      "name": "orders_customer_id_idx",
+      "scans": 48210,
+      "size_bytes": 3145728,
+      "size_human": "3072 kB"
+    }
+  ]
 }
 ```
+
+## Column masking
+
+If a [policy file](/features/policy-engine) defines column masks, sample rows are automatically masked using the same rules as `query` results. For example, with `email: redact` and `phone: partial`:
+
+```json
+"sample_rows": [
+  {"id": 1, "email": "***", "phone": "***********5309", "name": "Alice"}
+]
+```
+
+This ensures table analysis never leaks PII. See [Column Masking](/features/column-masking) for details.
 
 ## Notes
 
 - If `schema` is omitted, Isthmus resolves the table name across all allowed schemas. If the table name is ambiguous (exists in multiple schemas), provide the `schema` parameter.
 - Column statistics come from `pg_stats` and require `ANALYZE` to have run. If stats are unavailable, the `stats` field is omitted.
 - Cardinality classification thresholds: `unique` (100% distinct), `near_unique` (over 90%), `high_cardinality` (over 200 distinct), `low_cardinality` (21–200), `enum_like` (20 or fewer).
+- Sample rows are fetched with `LIMIT 5` using a `TABLESAMPLE` clause when available for performance.
+- Index usage stats come from `pg_stat_user_indexes`. An index with `scans: 0` may be unused and a candidate for removal.
+- The `stats_age_warning` field appears when the last `ANALYZE` is older than 7 days or has never been run.

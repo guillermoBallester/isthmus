@@ -1,11 +1,11 @@
 ---
 title: "query"
-description: "Execute a read-only SQL query and return results as JSON."
+description: "Execute a read-only SQL query and return results as JSON, with optional EXPLAIN plans."
 ---
 
 ## Description
 
-Execute a read-only SQL query against the database and return results as a JSON array of objects. A server-side row limit and query timeout are enforced.
+Execute a read-only SQL query against the database and return results as a JSON array of objects. A server-side row limit and query timeout are enforced. Optionally, request the execution plan instead of results using the `explain` parameter.
 
 Always use specific column names instead of `SELECT *`. Use JOINs based on foreign keys discovered via `describe_table`. Check column cardinality from `describe_table` to write efficient `WHERE` and `GROUP BY` clauses.
 
@@ -13,7 +13,9 @@ Always use specific column names instead of `SELECT *`. Use JOINs based on forei
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `sql` | string | Yes | SQL query to execute (SELECT statements only) |
+| `sql` | string | Yes | SQL query to execute (SELECT statements only, without the `EXPLAIN` keyword) |
+| `explain` | boolean | No | Return the execution plan instead of results. Defaults to `false`. |
+| `analyze` | boolean | No | Include actual execution statistics in the plan (requires `explain: true`). When `true`, the query is executed inside a read-only transaction. Defaults to `false`. |
 
 ## Response schema
 
@@ -46,6 +48,44 @@ The exact fields depend on the columns in your query.
 ]
 ```
 
+## Execution plans
+
+Use the `explain` and `analyze` parameters to inspect query performance without writing a separate tool call.
+
+**EXPLAIN only (no execution):**
+```json
+{
+  "sql": "SELECT id, status FROM orders WHERE status = 'paid'",
+  "explain": true
+}
+```
+
+```json
+[
+  { "QUERY PLAN": "Seq Scan on orders  (cost=0.00..5410.00 rows=86800 width=52)" },
+  { "QUERY PLAN": "  Filter: (status = 'paid'::text)" }
+]
+```
+
+**EXPLAIN ANALYZE (includes actual execution stats):**
+```json
+{
+  "sql": "SELECT id, status FROM orders WHERE status = 'paid'",
+  "explain": true,
+  "analyze": true
+}
+```
+
+```json
+[
+  { "QUERY PLAN": "Seq Scan on orders  (cost=0.00..5410.00 rows=86800 width=52) (actual time=0.015..32.450 rows=86800 loops=1)" },
+  { "QUERY PLAN": "  Filter: (status = 'paid'::text)" },
+  { "QUERY PLAN": "  Rows Removed by Filter: 161200" },
+  { "QUERY PLAN": "Planning Time: 0.085 ms" },
+  { "QUERY PLAN": "Execution Time: 45.230 ms" }
+]
+```
+
 ## Safety
 
 - **Read-only** — all queries run inside a read-only transaction. `INSERT`, `UPDATE`, `DELETE`, `DROP`, and all other write operations are rejected.
@@ -70,6 +110,9 @@ Masking is applied after query execution and is not bypassable — the AI never 
 ## Notes
 
 - If `--explain-only` mode is enabled, `query` calls automatically return the `EXPLAIN` plan instead of executing the query.
+- When using `explain: true`, provide the `SELECT` query only — Isthmus prepends `EXPLAIN` or `EXPLAIN ANALYZE` automatically. Do not include the `EXPLAIN` keyword in the `sql` parameter.
+- With `explain: true` and `analyze: false` (default), only the planner's estimates are shown. The query is not executed.
+- With `explain: true` and `analyze: true`, the query is executed inside a read-only transaction, and actual row counts, timing, and buffer usage are included.
 - Column values are JSON-serialized: timestamps become ISO 8601 strings, UUIDs become strings, numeric types preserve precision.
 - Masked columns may change type (e.g. an integer column with `mask: "redact"` returns the string `"***"`).
 - For large tables, always use `LIMIT` and filter with `WHERE` to avoid hitting the row cap or timeout.
