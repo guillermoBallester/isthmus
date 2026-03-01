@@ -61,12 +61,11 @@ See the [quickstart guide](https://isthmus.dev/docs/quickstart) for step-by-step
 
 - **Schema discovery** — explore schemas, tables, columns, foreign keys, and indexes ([docs](https://isthmus.dev/docs/tools/overview))
 - **Read-only queries** — execute SQL with server-side row limits and query timeouts ([docs](https://isthmus.dev/docs/tools/query))
-- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/features/docs/column-masking))
-- **Table profiler** — column statistics, cardinality, sample rows, index usage ([docs](https://isthmus.dev/docs/tools/profile-table))
+- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/docs/features/column-masking))
 - **Policy engine** — enrich your schema with business context so the AI writes better SQL ([docs](https://isthmus.dev/docs/features/policy-engine))
-- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/docs/configuration))
+- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/docs/features/sql-validation))
 - **HTTP transport** — serve MCP over HTTP for web-based clients, ChatGPT Desktop, and remote access ([docs](https://isthmus.dev/docs/features/http-transport))
-- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/features/docs/opentelemetry))
+- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/docs/features/opentelemetry))
 - **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code, ChatGPT Desktop ([client setup](https://isthmus.dev/docs/clients/claude-desktop))
 
 ## How it works
