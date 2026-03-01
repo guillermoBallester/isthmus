@@ -75,6 +75,7 @@ main() {
     DOWNLOAD_URL="https://github.com/guillermoBallester/isthmus/releases/download/v${VERSION}/${ARCHIVE}"
     info "Downloading isthmus v${VERSION} for ${OS}/${ARCH}..."
     if curl -fsSL -o "/tmp/${ARCHIVE}" "$DOWNLOAD_URL"; then
+      rm -rf /tmp/isthmus
       tar -xzf "/tmp/${ARCHIVE}" -C /tmp isthmus
       chmod +x /tmp/isthmus
       INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
