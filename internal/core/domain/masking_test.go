@@ -187,3 +187,89 @@ func TestMaskRows_MissingColumn(t *testing.T) {
 	MaskRows(rows, masks)
 	assert.Equal(t, "Alice", rows[0]["name"])
 }
+
+func TestMaskRowsWithAliases_AliasedColumn(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		{"id": 1, "email": "alice@example.com"},
+		{"id": 2, "email": "bob@example.com"},
+	}
+	masks := map[string]MaskType{"Email": MaskRedact}
+	aliases := map[string]string{"Email": "email"}
+
+	MaskRowsWithAliases(rows, masks, aliases)
+
+	assert.Equal(t, "***", rows[0]["email"])
+	assert.Equal(t, "***", rows[1]["email"])
+	assert.Equal(t, 1, rows[0]["id"])
+}
+
+func TestMaskRowsWithAliases_NonAliased(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		{"id": 1, "Email": "alice@example.com"},
+	}
+	masks := map[string]MaskType{"Email": MaskRedact}
+	aliases := map[string]string{} // no aliases
+
+	MaskRowsWithAliases(rows, masks, aliases)
+
+	assert.Equal(t, "***", rows[0]["Email"])
+}
+
+func TestMaskRowsWithAliases_MixedAliasedAndNot(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		{"Phone": "+1-555-1234", "email": "alice@example.com", "id": 1},
+	}
+	masks := map[string]MaskType{
+		"Email": MaskRedact,
+		"Phone": MaskPartial,
+	}
+	aliases := map[string]string{"Email": "email"}
+
+	MaskRowsWithAliases(rows, masks, aliases)
+
+	assert.Equal(t, "***", rows[0]["email"])
+	assert.Equal(t, "*******1234", rows[0]["Phone"])
+	assert.Equal(t, 1, rows[0]["id"])
+}
+
+func TestMaskRowsWithAliases_NoMatchingAlias(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		{"id": 1, "other_col": "value"},
+	}
+	masks := map[string]MaskType{"Email": MaskRedact}
+	aliases := map[string]string{"Name": "name"}
+
+	MaskRowsWithAliases(rows, masks, aliases)
+
+	assert.Equal(t, "value", rows[0]["other_col"])
+	assert.Equal(t, 1, rows[0]["id"])
+}
+
+func TestMaskRowsWithAliases_NoMasks(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		{"id": 1, "email": "alice@example.com"},
+	}
+
+	MaskRowsWithAliases(rows, nil, map[string]string{"Email": "email"})
+	assert.Equal(t, "alice@example.com", rows[0]["email"])
+}
+
+func TestMaskRowsWithAliases_DirectMatchTakesPrecedence(t *testing.T) {
+	t.Parallel()
+	// If the row has both the original column name and alias, direct match wins.
+	rows := []map[string]any{
+		{"Email": "direct@example.com", "email": "aliased@example.com"},
+	}
+	masks := map[string]MaskType{"Email": MaskRedact}
+	aliases := map[string]string{"Email": "email"}
+
+	MaskRowsWithAliases(rows, masks, aliases)
+
+	assert.Equal(t, "***", rows[0]["Email"])
+	assert.Equal(t, "aliased@example.com", rows[0]["email"]) // alias not touched when direct match exists
+}

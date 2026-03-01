@@ -25,11 +25,9 @@
 
 Isthmus is a local [MCP](https://modelcontextprotocol.io) server that gives AI models safe, read-only access to your PostgreSQL database. One binary, runs on your machine, credentials never leave.
 
-<!-- TODO: Replace with a terminal recording (e.g. VHS, asciinema)
 <p align="center">
   <img src="docs/assets/demo.gif" alt="Isthmus demo" width="700" />
 </p>
--->
 
 ## Quick start
 
@@ -75,71 +73,54 @@ See the [quickstart guide](https://isthmus.dev/docs/quickstart) for step-by-step
 
 ```mermaid
 flowchart TB
-    %% ── Clients ──────────────────────────────────────
-    Claude["🖥️ Claude Desktop"]
-    Cursor["🖥️ Cursor / VS Code"]
-    ChatGPT["🌐 ChatGPT / Web"]
+    Claude["Claude Desktop"] & Cursor["Cursor / VS Code"] -->|stdio| STDIO
+    ChatGPT["ChatGPT / Web"] -->|HTTP| HTTP
 
-    Claude & Cursor -->|stdio| STDIO
-    ChatGPT -->|HTTP| HTTP
-
-    %% ── Transport ────────────────────────────────────
-    subgraph Transport["⚡ Transport Layer"]
-        STDIO["stdio transport"]
-        HTTP["HTTP transport\n+ Bearer auth"]
+    subgraph Transport["Transport"]
+        STDIO["stdio"]
+        HTTP["HTTP + Auth"]
     end
 
     STDIO & HTTP --> Router
 
-    %% ── MCP Router ──────────────────────────────────
-    subgraph MCP["🔧 MCP Tools"]
-        Router{{"tool router"}}
-        Router --> Discover["discover\nschemas + tables"]
-        Router --> Describe["describe_table\ncolumns, keys, stats"]
-        Router --> Query["query\nread-only SQL"]
+    subgraph Tools["MCP Tools"]
+        Router{{"router"}}
+        Router --> Discover["discover"]
+        Router --> Describe["describe_table"]
+        Router --> Query["query"]
     end
 
-    %% ── Schema exploration path ─────────────────────
     Discover & Describe --> Explorer
 
-    subgraph ExplorerLayer["🔍 Schema Explorer"]
-        Explorer["PostgreSQL catalog\nintrospection"]
-        Explorer --> PolicyE["Policy Engine\n+ business context"]
+    subgraph Schema["Schema Explorer"]
+        Explorer["Catalog Introspection"]
+        Explorer --> Policy["Policy Engine"]
     end
 
-    %% ── Query execution path ────────────────────────
-    Query --> Pipeline
+    Query --> Validate
 
-    subgraph SecurityPipeline["🛡️ Security Pipeline"]
+    subgraph Security["Security Pipeline"]
         direction TB
-        Pipeline["SQL Validation\nAST whitelist · pg_query parser\nSELECT & EXPLAIN only"] --> TxMode
-        TxMode["Read-Only Transaction\nAccessMode: ReadOnly"] --> RowLimit
-        RowLimit["Row Limit\nserver-side LIMIT wrapper"] --> Timeout
-        Timeout["Query Timeout\nGo context + SET LOCAL\nstatement_timeout"]
+        Validate["AST Validation"] --> ReadOnly["Read-Only Tx"]
+        ReadOnly --> RowLimit["Row Limit"]
+        RowLimit --> Timeout["Timeout"]
     end
 
-    %% ── Database ────────────────────────────────────
-    SecurityPipeline --> PG[("🐘 PostgreSQL")]
-    ExplorerLayer --> PG
+    Security --> PG[("PostgreSQL")]
+    Schema --> PG
 
-    %% ── Post-processing ─────────────────────────────
-    PG --> PostProcess
+    PG --> Mask
 
-    subgraph PostProcess["🔒 Post-Processing"]
+    subgraph Post["Post-Processing"]
         direction TB
-        Masking["PII Masking\nredact · hash · partial · null\nserver-side, per-column"]
-        Masking --> ErrorSan["Error Sanitization\nno internal details leaked"]
+        Mask["PII Masking"] --> Sanitize["Error Sanitization"]
     end
 
-    %% ── Observability ───────────────────────────────
-    PostProcess -.-> Audit["📝 Audit Log\nNDJSON append-only"]
-    PostProcess -.-> OTel["📊 OpenTelemetry\ntraces + metrics"]
-
-    %% ── Response ────────────────────────────────────
-    PostProcess --> Response["✅ Safe response\nmasked · limited · validated"]
+    Post -.-> Audit["Audit Log"]
+    Post -.-> OTel["OpenTelemetry"]
+    Post --> Response["Safe Response"]
     Response --> Claude & Cursor & ChatGPT
 
-    %% ── Styles ──────────────────────────────────────
     classDef client fill:#e8f4f8,stroke:#2196F3,color:#1565C0
     classDef transport fill:#fff3e0,stroke:#FF9800,color:#E65100
     classDef tools fill:#e8eaf6,stroke:#3F51B5,color:#283593
@@ -153,9 +134,9 @@ flowchart TB
     class Claude,Cursor,ChatGPT client
     class STDIO,HTTP transport
     class Router,Discover,Describe,Query tools
-    class Pipeline,TxMode,RowLimit,Timeout security
-    class Explorer,PolicyE explorer
-    class Masking,ErrorSan postproc
+    class Validate,ReadOnly,RowLimit,Timeout security
+    class Explorer,Policy explorer
+    class Mask,Sanitize postproc
     class PG db
     class Audit,OTel obs
     class Response response
