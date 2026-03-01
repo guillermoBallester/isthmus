@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Your database, understood by AI.</strong>
+  <strong>The MCP server for your database</strong>
 </p>
 
 <p align="center">
@@ -73,23 +73,95 @@ See the [quickstart guide](https://isthmus.dev/docs/quickstart) for step-by-step
 
 ## How it works
 
-```
-  Claude / Cursor / VS Code          ChatGPT / Web clients
-       │                                    │
-       │ stdio (MCP)                        │ HTTP (MCP)
-       ▼                                    ▼
-  ┌─────────────────────────────────────────────┐
-  │                  isthmus                    │
-  └─────────────────────┬───────────────────────┘
-                        │
-                        ▼
-                  ┌────────────┐
-                  │ PostgreSQL │
-                  └────────────┘
-                    any host
+```mermaid
+flowchart TB
+    %% ── Clients ──────────────────────────────────────
+    Claude["🖥️ Claude Desktop"]
+    Cursor["🖥️ Cursor / VS Code"]
+    ChatGPT["🌐 ChatGPT / Web"]
+
+    Claude & Cursor -->|stdio| STDIO
+    ChatGPT -->|HTTP| HTTP
+
+    %% ── Transport ────────────────────────────────────
+    subgraph Transport["⚡ Transport Layer"]
+        STDIO["stdio transport"]
+        HTTP["HTTP transport\n+ Bearer auth"]
+    end
+
+    STDIO & HTTP --> Router
+
+    %% ── MCP Router ──────────────────────────────────
+    subgraph MCP["🔧 MCP Tools"]
+        Router{{"tool router"}}
+        Router --> Discover["discover\nschemas + tables"]
+        Router --> Describe["describe_table\ncolumns, keys, stats"]
+        Router --> Query["query\nread-only SQL"]
+    end
+
+    %% ── Schema exploration path ─────────────────────
+    Discover & Describe --> Explorer
+
+    subgraph ExplorerLayer["🔍 Schema Explorer"]
+        Explorer["PostgreSQL catalog\nintrospection"]
+        Explorer --> PolicyE["Policy Engine\n+ business context"]
+    end
+
+    %% ── Query execution path ────────────────────────
+    Query --> Pipeline
+
+    subgraph SecurityPipeline["🛡️ Security Pipeline"]
+        direction TB
+        Pipeline["SQL Validation\nAST whitelist · pg_query parser\nSELECT & EXPLAIN only"] --> TxMode
+        TxMode["Read-Only Transaction\nAccessMode: ReadOnly"] --> RowLimit
+        RowLimit["Row Limit\nserver-side LIMIT wrapper"] --> Timeout
+        Timeout["Query Timeout\nGo context + SET LOCAL\nstatement_timeout"]
+    end
+
+    %% ── Database ────────────────────────────────────
+    SecurityPipeline --> PG[("🐘 PostgreSQL")]
+    ExplorerLayer --> PG
+
+    %% ── Post-processing ─────────────────────────────
+    PG --> PostProcess
+
+    subgraph PostProcess["🔒 Post-Processing"]
+        direction TB
+        Masking["PII Masking\nredact · hash · partial · null\nserver-side, per-column"]
+        Masking --> ErrorSan["Error Sanitization\nno internal details leaked"]
+    end
+
+    %% ── Observability ───────────────────────────────
+    PostProcess -.-> Audit["📝 Audit Log\nNDJSON append-only"]
+    PostProcess -.-> OTel["📊 OpenTelemetry\ntraces + metrics"]
+
+    %% ── Response ────────────────────────────────────
+    PostProcess --> Response["✅ Safe response\nmasked · limited · validated"]
+    Response --> Claude & Cursor & ChatGPT
+
+    %% ── Styles ──────────────────────────────────────
+    classDef client fill:#e8f4f8,stroke:#2196F3,color:#1565C0
+    classDef transport fill:#fff3e0,stroke:#FF9800,color:#E65100
+    classDef tools fill:#e8eaf6,stroke:#3F51B5,color:#283593
+    classDef security fill:#fce4ec,stroke:#E53935,color:#b71c1c
+    classDef explorer fill:#e8f5e9,stroke:#4CAF50,color:#1B5E20
+    classDef postproc fill:#f3e5f5,stroke:#9C27B0,color:#4A148C
+    classDef db fill:#fff8e1,stroke:#FFC107,color:#F57F17
+    classDef obs fill:#eceff1,stroke:#607D8B,color:#37474F
+    classDef response fill:#e0f2f1,stroke:#009688,color:#004D40
+
+    class Claude,Cursor,ChatGPT client
+    class STDIO,HTTP transport
+    class Router,Discover,Describe,Query tools
+    class Pipeline,TxMode,RowLimit,Timeout security
+    class Explorer,PolicyE explorer
+    class Masking,ErrorSan postproc
+    class PG db
+    class Audit,OTel obs
+    class Response response
 ```
 
-Isthmus sits between your AI client and your database. It validates every query at the AST level, enforces read-only transactions, masks PII columns, and injects server-side row limits — independent of whatever SQL the LLM generates. Supports both stdio and HTTP transports.
+Isthmus sits between your AI client and your database. Every request flows through a **security pipeline** — SQL is validated at the AST level using PostgreSQL's own parser, queries run in read-only transactions with server-side row limits and timeouts, and PII columns are masked before results reach the AI. The **policy engine** enriches schema metadata with business context so the AI writes better SQL. All activity is recorded in an append-only audit log with optional OpenTelemetry tracing.
 
 ## MCP tools
 
