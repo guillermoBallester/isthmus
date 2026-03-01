@@ -83,3 +83,28 @@ func MaskRows(rows []map[string]any, masks map[string]MaskType) {
 		}
 	}
 }
+
+// MaskRowsWithAliases applies column masks to query result rows in place,
+// resolving column aliases. For each mask key (original column name), it
+// first checks if the row contains that key directly; if not, it checks
+// whether the column was aliased and masks the aliased key instead.
+func MaskRowsWithAliases(rows []map[string]any, masks map[string]MaskType, aliases map[string]string) {
+	if len(masks) == 0 {
+		return
+	}
+	if len(aliases) == 0 {
+		MaskRows(rows, masks)
+		return
+	}
+	for _, row := range rows {
+		for col, maskType := range masks {
+			if val, exists := row[col]; exists {
+				row[col] = ApplyMask(val, maskType)
+			} else if alias, hasAlias := aliases[col]; hasAlias {
+				if val, exists := row[alias]; exists {
+					row[alias] = ApplyMask(val, maskType)
+				}
+			}
+		}
+	}
+}

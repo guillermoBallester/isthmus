@@ -141,6 +141,32 @@ func TestQueryService_WithMasks(t *testing.T) {
 	assert.Equal(t, "Alice", rows[0]["name"])
 }
 
+func TestQueryService_WithMasks_Aliases(t *testing.T) {
+	t.Parallel()
+	// Simulate what happens when an LLM generates: SELECT "Email" AS email, "Phone" AS phone
+	// The executor returns rows keyed by alias names, not original column names.
+	exec := &mockExecutor{
+		result: []map[string]any{
+			{"id": 1, "email": "alice@example.com", "phone": "+1-555-1234"},
+			{"id": 2, "email": "bob@example.com", "phone": "+1-555-5678"},
+		},
+	}
+	masks := map[string]domain.MaskType{
+		"Email": domain.MaskRedact,
+		"Phone": domain.MaskPartial,
+	}
+	svc := NewQueryService(domain.NewPgQueryValidator(), exec, port.NoopAuditor{}, testLogger(), masks, nil, nil)
+
+	rows, err := svc.Execute(context.Background(), `SELECT "Email" AS email, "Phone" AS phone FROM "Customer"`)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "***", rows[0]["email"])
+	assert.Equal(t, "***", rows[1]["email"])
+	assert.Equal(t, "*******1234", rows[0]["phone"])
+	assert.Equal(t, "*******5678", rows[1]["phone"])
+	assert.Equal(t, 1, rows[0]["id"])
+}
+
 func TestQueryService_NoMasks(t *testing.T) {
 	t.Parallel()
 	exec := &mockExecutor{

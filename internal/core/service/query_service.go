@@ -103,7 +103,8 @@ func (s *QueryService) Execute(ctx context.Context, sql string) ([]map[string]an
 
 	s.inst.IncrementQueryCount(ctx)
 	span.SetAttributes(attribute.Int("db.response.rows", len(results)))
-	domain.MaskRows(results, s.masks)
+	aliases := domain.ExtractAliasMap(sql)
+	domain.MaskRowsWithAliases(results, s.masks, aliases)
 
 	return results, nil
 }
