@@ -57,5 +57,5 @@ jobs:
           push: true
           build-args: VERSION=${{ steps.version.outputs.version }}
           tags: |
-            guillermoballester/isthmus:latest
-            guillermoballester/isthmus:${{ steps.version.outputs.version }}
+            guillermosasso/isthmus:latest
+            guillermosasso/isthmus:${{ steps.version.outputs.version }}
