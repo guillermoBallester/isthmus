@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -28,7 +29,18 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+// version is set at build time via ldflags (goreleaser / Makefile).
+// When installed via `go install`, ldflags aren't set, so init() falls
+// back to the module version embedded by the Go toolchain.
 var version = "dev"
+
+func init() {
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+}
 
 func main() {
 	if err := run(); err != nil {

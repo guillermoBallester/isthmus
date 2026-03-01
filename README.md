@@ -12,6 +12,7 @@
   <a href="https://github.com/guillermoBallester/isthmus/releases/latest"><img src="https://img.shields.io/github/v/release/guillermoBallester/isthmus?label=release" alt="Latest Release" /></a>
   <a href="https://github.com/guillermoBallester/isthmus/stargazers"><img src="https://img.shields.io/github/stars/guillermoBallester/isthmus" alt="GitHub Stars" /></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
+  <a href="https://hub.docker.com/r/guillermosasso/isthmus"><img src="https://img.shields.io/docker/v/guillermosasso/isthmus?label=docker&logo=docker&logoColor=white" alt="Docker" /></a>
 </p>
 
 <p align="center">
@@ -32,8 +33,9 @@ Isthmus is a local [MCP](https://modelcontextprotocol.io) server that gives AI m
 ## Quick start
 
 ```bash
-# 1. Install
-curl -fsSL https://isthmus.dev/install.sh | sh
+# 1. Install (pick one)
+curl -fsSL https://isthmus.dev/install.sh | sh   # install script
+docker pull guillermosasso/isthmus                # or Docker Hub
 
 # 2. Add to your MCP client config (Claude Desktop example)
 ```
@@ -57,16 +59,47 @@ curl -fsSL https://isthmus.dev/install.sh | sh
 
 See the [quickstart guide](https://isthmus.dev/docs/quickstart) for step-by-step setup with Claude Desktop, Cursor, Windsurf, and more.
 
+## Docker
+
+Images are published to [Docker Hub](https://hub.docker.com/r/guillermosasso/isthmus) on every release (linux/amd64 and linux/arm64).
+
+```bash
+docker run --rm \
+  -e DATABASE_URL="postgres://user:pass@host.docker.internal:5432/mydb" \
+  guillermosasso/isthmus
+```
+
+Or pin a specific version:
+
+```bash
+docker pull guillermosasso/isthmus:0.1.1
+```
+
+To use with Claude Desktop, point the MCP config at the container:
+
+```json
+{
+  "mcpServers": {
+    "isthmus": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i",
+        "-e", "DATABASE_URL=postgres://user:pass@host.docker.internal:5432/mydb",
+        "guillermosasso/isthmus"
+      ]
+    }
+  }
+}
+```
+
 ## Features
 
 - **Schema discovery** — explore schemas, tables, columns, foreign keys, and indexes ([docs](https://isthmus.dev/docs/tools/overview))
 - **Read-only queries** — execute SQL with server-side row limits and query timeouts ([docs](https://isthmus.dev/docs/tools/query))
-- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/features/docs/column-masking))
-- **Table profiler** — column statistics, cardinality, sample rows, index usage ([docs](https://isthmus.dev/docs/tools/profile-table))
+- **Column masking** — protect PII with per-column redact, hash, partial, or null masks — enforced server-side ([docs](https://isthmus.dev/docs/features/column-masking))
 - **Policy engine** — enrich your schema with business context so the AI writes better SQL ([docs](https://isthmus.dev/docs/features/policy-engine))
-- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/docs/configuration))
+- **SQL validation** — AST-level whitelist via `pg_query` parser — only `SELECT` and `EXPLAIN` allowed ([docs](https://isthmus.dev/docs/features/sql-validation))
 - **HTTP transport** — serve MCP over HTTP for web-based clients, ChatGPT Desktop, and remote access ([docs](https://isthmus.dev/docs/features/http-transport))
-- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/features/docs/opentelemetry))
+- **OpenTelemetry** — distributed tracing and metrics for query performance and error monitoring ([docs](https://isthmus.dev/docs/features/opentelemetry))
 - **Works with any MCP client** — Claude Desktop, Cursor, Windsurf, Gemini CLI, VS Code, ChatGPT Desktop ([client setup](https://isthmus.dev/docs/clients/claude-desktop))
 
 ## How it works
